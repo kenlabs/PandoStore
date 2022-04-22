@@ -1,7 +1,7 @@
 package hamt
 
 import (
-	"PandoStore/pkg/providerstore/types"
+	"PandoStore/pkg/types"
 	"context"
 	//"github.com/kenlabs/pando/pkg/statetree/types"
 	"github.com/stretchr/testify/assert"

@@ -3,7 +3,7 @@ package providerstore
 import (
 	"PandoStore/pkg/hamt"
 	"PandoStore/pkg/providerstore/registry"
-	"PandoStore/pkg/providerstore/types"
+	"PandoStore/pkg/types"
 	"context"
 	"fmt"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
@@ -12,23 +12,25 @@ import (
 	"github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"sync"
 )
 
 var (
 	//providerInfoPrefix  = "/providerInfo"
 	//providerStatePrefix = "/providerState"
-	rootKey = "ProviderStore"
+	rootKey = "/ProviderStore"
 )
 
 var log = logging.Logger("provider-store")
 
 type ProviderStore struct {
-	ds       datastore.Batching
-	cs       adt.Store
-	root     hamt.Map
-	registry *registry.Registry
-	ctx      context.Context
-	cncl     context.CancelFunc
+	ds           datastore.Batching
+	cs           adt.Store
+	workingTasks sync.WaitGroup
+	root         hamt.Map
+	registry     *registry.Registry
+	ctx          context.Context
+	cncl         context.CancelFunc
 }
 
 func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*ProviderStore, error) {
@@ -89,6 +91,8 @@ func (ps *ProviderStore) init(ctx context.Context) error {
 }
 
 func (ps *ProviderStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key string, metaContext []byte) error {
+	ps.workingTasks.Add(1)
+	defer ps.workingTasks.Done()
 	c, err := cid.Decode(key)
 	if err != nil {
 		return fmt.Errorf("key must be valid cid, err :%v", err)
@@ -111,4 +115,44 @@ func (ps *ProviderStore) ProviderAddMeta(ctx context.Context, provider peer.ID, 
 		return err
 	}
 	return nil
+}
+
+func (ps *ProviderStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *types.SnapShot, scid cid.Cid) error {
+	ps.workingTasks.Add(1)
+	defer ps.workingTasks.Done()
+	for p, clist := range update {
+		for _, c := range clist {
+			key := hamt.ProviderKey{
+				ID:   p,
+				Meta: c,
+			}
+			mstore := new(types.MetaState)
+			ok, err := ps.root.Get(key, mstore)
+			if !ok {
+				log.Errorf("nil meta state to update, provider:%s, cid:%s", p.String(), c.String())
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			mstore.SnapShotCid = scid.String()
+			mstore.SnapShotHeight = ss.Height
+			err = ps.root.Put(key, mstore)
+			if err != nil {
+				return err
+			}
+		}
+		// update last update height for provider
+		err := ps.registry.UpdateProviderInfo(ctx, p, cid.Undef, ss.Height)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (ps *ProviderStore) ProviderStateRoot() (cid.Cid, error) {
+	ps.workingTasks.Wait()
+	return ps.root.Root()
 }
