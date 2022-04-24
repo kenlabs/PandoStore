@@ -1,12 +1,9 @@
 package hamt
 
 import (
-	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"path"
-
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/cbor"
+	"github.com/ipfs/go-cid"
 )
 
 type Map interface {
@@ -35,11 +32,10 @@ type Array interface {
 //	Key() string
 //}
 
-type ProviderKey struct {
-	ID   peer.ID
+type StateKey struct {
 	Meta cid.Cid
 }
 
-func (p ProviderKey) Key() string {
-	return path.Join(p.ID.String(), p.Meta.String())
+func (p StateKey) Key() string {
+	return p.Meta.String()
 }

@@ -1,9 +1,10 @@
-package providerstore
+package statestore
 
 import (
 	"PandoStore/pkg/hamt"
-	"PandoStore/pkg/providerstore/registry"
-	"PandoStore/pkg/types"
+	"PandoStore/pkg/metastore"
+	"PandoStore/pkg/statestore/registry"
+	"PandoStore/pkg/types/cbortypes"
 	"context"
 	"fmt"
 	"github.com/filecoin-project/specs-actors/v5/actors/builtin"
@@ -18,12 +19,12 @@ import (
 var (
 	//providerInfoPrefix  = "/providerInfo"
 	//providerStatePrefix = "/providerState"
-	rootKey = "/ProviderStore"
+	rootKey = "/MetaStateStore"
 )
 
 var log = logging.Logger("provider-store")
 
-type ProviderStore struct {
+type MetaStateStore struct {
 	ds           datastore.Batching
 	cs           adt.Store
 	workingTasks sync.WaitGroup
@@ -33,13 +34,13 @@ type ProviderStore struct {
 	cncl         context.CancelFunc
 }
 
-func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*ProviderStore, error) {
+func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*MetaStateStore, error) {
 	reg, err := registry.New(ctx, ds)
 	if err != nil {
 		return nil, err
 	}
 	childCtx, cncl := context.WithCancel(ctx)
-	ps := &ProviderStore{
+	ps := &MetaStateStore{
 		ds:       ds,
 		cs:       cs,
 		ctx:      childCtx,
@@ -48,18 +49,18 @@ func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*ProviderSto
 	}
 	err = ps.init(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to init ProviderStore, err: %v", err)
+		return nil, fmt.Errorf("failed to init MetaStateStore, err: %v", err)
 	}
 
 	return ps, nil
 }
 
-func (ps *ProviderStore) init(ctx context.Context) error {
+func (ps *MetaStateStore) init(ctx context.Context) error {
 	if ps.ds == nil || ps.cs == nil {
 		return fmt.Errorf("nil database")
 	}
 	root, err := ps.ds.Get(ctx, datastore.NewKey(rootKey))
-	if err != nil {
+	if err != nil && err != datastore.ErrNotFound {
 		return err
 	}
 
@@ -67,7 +68,7 @@ func (ps *ProviderStore) init(ctx context.Context) error {
 	if err == nil && root != nil {
 		_, rootcid, err := cid.CidFromBytes(root)
 		if err != nil {
-			return fmt.Errorf("failed to load ProviderStore root")
+			return fmt.Errorf("failed to load MetaStateStore root")
 		}
 		log.Debugf("find root cid %s, loading...", rootcid.String())
 
@@ -90,7 +91,7 @@ func (ps *ProviderStore) init(ctx context.Context) error {
 	return nil
 }
 
-func (ps *ProviderStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key string, metaContext []byte) error {
+func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key string, metaContext []byte) error {
 	ps.workingTasks.Add(1)
 	defer ps.workingTasks.Done()
 	c, err := cid.Decode(key)
@@ -101,11 +102,18 @@ func (ps *ProviderStore) ProviderAddMeta(ctx context.Context, provider peer.ID, 
 	if err != nil {
 		return err
 	}
-
-	err = ps.root.Put(hamt.ProviderKey{
-		ID:   provider,
+	hkey := hamt.StateKey{
 		Meta: c,
-	}, &types.MetaState{
+	}
+
+	exist, err := ps.root.Get(hkey, nil)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return metastore.KeyHasExisted
+	}
+	err = ps.root.Put(hkey, &cbortypes.MetaState{
 		ProviderID:     provider.String(),
 		SnapShotCid:    "",
 		SnapShotHeight: 0,
@@ -117,16 +125,15 @@ func (ps *ProviderStore) ProviderAddMeta(ctx context.Context, provider peer.ID, 
 	return nil
 }
 
-func (ps *ProviderStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *types.SnapShot, scid cid.Cid) error {
+func (ps *MetaStateStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *cbortypes.SnapShot, scid cid.Cid) error {
 	ps.workingTasks.Add(1)
 	defer ps.workingTasks.Done()
 	for p, clist := range update {
 		for _, c := range clist {
-			key := hamt.ProviderKey{
-				ID:   p,
+			key := hamt.StateKey{
 				Meta: c,
 			}
-			mstore := new(types.MetaState)
+			mstore := new(cbortypes.MetaState)
 			ok, err := ps.root.Get(key, mstore)
 			if !ok {
 				log.Errorf("nil meta state to update, provider:%s, cid:%s", p.String(), c.String())
@@ -152,7 +159,25 @@ func (ps *ProviderStore) ProvidersUpdateMeta(ctx context.Context, update map[pee
 	return nil
 }
 
-func (ps *ProviderStore) ProviderStateRoot() (cid.Cid, error) {
+func (ps *MetaStateStore) MetaStateRoot() (cid.Cid, error) {
 	ps.workingTasks.Wait()
 	return ps.root.Root()
+}
+
+func (ps *MetaStateStore) GetMetaInfo(ctx context.Context, c cid.Cid) (*cbortypes.MetaState, error) {
+	key := hamt.StateKey{Meta: c}
+	state := new(cbortypes.MetaState)
+	ok, err := ps.root.Get(key, state)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("meta state about cid: [%s] not existed", c.String())
+	}
+	return state, nil
+}
+
+func (ps *MetaStateStore) GetProviderInfo(ctx context.Context, p peer.ID) (*registry.ProviderInfo, error) {
+	info, err := ps.registry.ProviderInfo(ctx, p)
+	return info, err
 }

@@ -1,4 +1,4 @@
-package types
+package cbortypes
 
 //go:generate cbor-gen-for MetaState
 type MetaState struct {

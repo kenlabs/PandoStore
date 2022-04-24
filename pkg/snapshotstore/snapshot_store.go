@@ -2,7 +2,7 @@ package snapshotstore
 
 import (
 	"PandoStore/pkg/hamt"
-	"PandoStore/pkg/types"
+	"PandoStore/pkg/types/cbortypes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,7 +45,7 @@ func (s *SnapShotStore) init(ctx context.Context) error {
 		return err
 	}
 	if slist != nil {
-		ss := new(types.SnapShot)
+		ss := new(cbortypes.SnapShot)
 		newestCid := (*slist)[len(*slist)-1]
 		err = s.cs.Get(ctx, newestCid, ss)
 		if err != nil {
@@ -107,7 +107,7 @@ func (s *SnapShotStore) loadSnapShotList(ctx context.Context) (*[]cid.Cid, error
 	return nil, nil
 }
 
-func (s *SnapShotStore) GenerateSnapShot(ctx context.Context, update map[peer.ID][]cid.Cid, stateRoot cid.Cid) (cid.Cid, *types.SnapShot, error) {
+func (s *SnapShotStore) GenerateSnapShot(ctx context.Context, update map[peer.ID][]cid.Cid, stateRoot cid.Cid) (cid.Cid, *cbortypes.SnapShot, error) {
 	s.snapShotMutex.Lock()
 	defer s.snapShotMutex.Unlock()
 
@@ -130,11 +130,11 @@ func (s *SnapShotStore) GenerateSnapShot(ctx context.Context, update map[peer.ID
 		previousSs = s.curSnapShot.String()
 	}
 
-	_update := make(map[string]*types.Metalist)
+	_update := make(map[string]*cbortypes.Metalist)
 	for p, state := range update {
-		_update[p.String()] = &types.Metalist{MetaList: state}
+		_update[p.String()] = &cbortypes.Metalist{MetaList: state}
 	}
-	newSnapShot := &types.SnapShot{
+	newSnapShot := &cbortypes.SnapShot{
 		Update:       _update,
 		Height:       height,
 		StateRoot:    stateRoot,
@@ -184,4 +184,33 @@ func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.
 		}
 	}
 	return nil
+}
+
+func (s *SnapShotStore) GetSnapShotByCid(ctx context.Context, c cid.Cid) (*cbortypes.SnapShot, error) {
+	if !c.Defined() {
+		return nil, fmt.Errorf("invalid cid")
+	}
+	res := new(cbortypes.SnapShot)
+	err := s.cs.Get(ctx, c, res)
+	if err != nil {
+		log.Errorf("failed to get SnapShot from store, err :%v", err)
+		return nil, err
+	}
+	return res, nil
+}
+
+func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbortypes.SnapShot, error) {
+	slist, err := s.loadSnapShotList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(*slist) == 0 || h+1 > uint64(len(*slist)) {
+		return nil, fmt.Errorf("invalid height: %d", h)
+	}
+
+	snapshot, err := s.GetSnapShotByCid(ctx, (*slist)[h])
+	if err != nil {
+		return nil, err
+	}
+	return snapshot, nil
 }

@@ -1,4 +1,4 @@
-package types
+package cbortypes
 
 import (
 	"github.com/ipfs/go-cid"

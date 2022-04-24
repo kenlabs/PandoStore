@@ -79,6 +79,7 @@ func (r *Registry) syncUpdateProviderInfo(ctx context.Context, provider peer.ID,
 	info, exist := r.providers[provider]
 	if !exist {
 		info = new(ProviderInfo)
+		info.PeerID = provider
 	}
 	if addCid.Defined() {
 		info.MetaList = append(info.MetaList, addCid)
@@ -86,6 +87,8 @@ func (r *Registry) syncUpdateProviderInfo(ctx context.Context, provider peer.ID,
 	if lastUpdateHeight != uint64(0) {
 		info.LastUpdateHeight = lastUpdateHeight
 	}
+
+	r.providers[provider] = info
 	err := r.syncPersistProvider(ctx, info)
 	if err != nil {
 		log.Errorf("could not persist provider info, err: %v", err)
@@ -145,6 +148,19 @@ func (r *Registry) loadPersistedProviders(ctx context.Context) (int, error) {
 		count++
 	}
 	return count, nil
+}
+
+func (r *Registry) ProviderInfo(ctx context.Context, id peer.ID) (*ProviderInfo, error) {
+	infoChan := make(chan *ProviderInfo)
+	r.actions <- func() {
+		info, ok := r.providers[id]
+		if ok {
+			infoChan <- info
+		}
+		close(infoChan)
+	}
+
+	return <-infoChan, nil
 }
 
 func (r *Registry) Close() error {

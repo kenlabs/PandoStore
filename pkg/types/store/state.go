@@ -1,4 +1,4 @@
-package types
+package store
 
 type StoreState int
 
