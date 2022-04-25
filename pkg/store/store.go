@@ -5,12 +5,22 @@ import (
 	"PandoStore/pkg/metastore"
 	"PandoStore/pkg/snapshotstore"
 	"PandoStore/pkg/statestore"
+	"PandoStore/pkg/system"
 	"PandoStore/pkg/types/store"
+	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
+	"github.com/ipfs/go-datastore"
+	dtsync "github.com/ipfs/go-datastore/sync"
+	dataStoreFactory "github.com/ipfs/go-ds-leveldb"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	cbor "github.com/ipfs/go-ipld-cbor"
+
 	"context"
 	"fmt"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -20,10 +30,12 @@ var log = logging.Logger("PandoStore")
 type PandoStore struct {
 	cfg *config.StoreConfig
 	// for provider update in snapshot
-	mutex            map[peer.ID]*sync.Mutex
+	providerMutex    map[peer.ID]*sync.Mutex
+	stateMutex       sync.RWMutex
 	state            store.StoreState
 	snapshotDone     chan struct{}
 	taskInProcessing sync.WaitGroup
+	basicDS          datastore.Batching
 	metaStore        *metastore.MetaStore
 	metaStateStore   *statestore.MetaStateStore
 	SnapShotStore    *snapshotstore.SnapShotStore
@@ -34,29 +46,104 @@ type PandoStore struct {
 
 func NewPandoStore(ctx context.Context, ms *metastore.MetaStore, ps *statestore.MetaStateStore, sstore *snapshotstore.SnapShotStore, cfg *config.StoreConfig) (*PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
-	store := &PandoStore{
+	s := &PandoStore{
 		ctx:             childCtx,
 		cncl:            cncl,
-		mutex:           make(map[peer.ID]*sync.Mutex),
+		providerMutex:   make(map[peer.ID]*sync.Mutex),
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
 		metaStore:       ms,
 		metaStateStore:  ps,
 		SnapShotStore:   sstore,
 		cfg:             cfg,
 	}
-	err := store.run()
+	err := s.run()
 	if err != nil {
 		return nil, err
 	}
 
-	return store, nil
+	return s, nil
 
 }
 
-func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provider peer.ID, metaContext []byte, prev []byte) error {
+func LoadStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoStore, error) {
+	childCtx, cncl := context.WithCancel(ctx)
+	if cfg.Type != "levelds" {
+		cncl()
+		return nil, fmt.Errorf("only levelds datastore type supported")
+	}
+	if cfg.Dir == "" {
+		cfg.Dir = config.DefaultStoreDir
+	}
+	dataStoreDir := filepath.Join(cfg.StoreRoot, cfg.Dir)
+	dataStoreDirExists, err := system.IsDirExists(dataStoreDir)
+	if !dataStoreDirExists {
+		err := os.MkdirAll(dataStoreDir, 0755)
+		if err != nil {
+			cncl()
+			return nil, err
+		}
+	}
+
+	writable, err := system.IsDirWritable(dataStoreDir)
+	if err != nil {
+		cncl()
+		return nil, err
+	}
+	if !writable {
+		cncl()
+		return nil, err
+	}
+	dataStore, err := dataStoreFactory.NewDatastore(dataStoreDir, nil)
+	if err != nil {
+		cncl()
+		return nil, err
+	}
+	mutexDatastore := dtsync.MutexWrap(dataStore)
+	bs := blockstore.NewBlockstore(mutexDatastore)
+	cs := cbor.NewCborStore(bs)
+	as := adt.WrapStore(ctx, cs)
+	metaStore, _ := metastore.New(mutexDatastore)
+	stateStore, err := statestore.New(childCtx, mutexDatastore, as)
+	if err != nil {
+		cncl()
+		return nil, err
+	}
+	snapStore, _ := snapshotstore.NewStore(childCtx, mutexDatastore, cs)
+
+	s := &PandoStore{
+		ctx:             childCtx,
+		cncl:            cncl,
+		providerMutex:   make(map[peer.ID]*sync.Mutex),
+		waitForSnapshot: make(map[peer.ID][]cid.Cid),
+		basicDS:         mutexDatastore,
+		metaStore:       metaStore,
+		metaStateStore:  stateStore,
+		SnapShotStore:   snapStore,
+		cfg:             cfg,
+	}
+	err = s.run()
+	if err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provider peer.ID, metaContext []byte) error {
+	ps.stateMutex.RLock()
 	if ps.state != store.Working {
-		// wait snapshot finished
-		<-ps.snapshotDone
+		if ps.state == store.SnapShoting {
+			ps.stateMutex.Unlock()
+			// wait snapshot finished
+			<-ps.snapshotDone
+		} else if ps.state == store.Closing {
+			ps.stateMutex.Unlock()
+			return fmt.Errorf("pandostore is closing, failed to store: %s", key)
+		} else {
+			ps.stateMutex.Unlock()
+			return fmt.Errorf("unknown work state: %v", ps.state)
+		}
+
 	}
 	ps.taskInProcessing.Add(1)
 	defer ps.taskInProcessing.Done()
@@ -88,11 +175,15 @@ func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provide
 	return nil
 }
 
+func (ps *PandoStore) Get(ctx context.Context, key string) ([]byte, error) {
+	return ps.metaStore.Get(ctx, key)
+}
+
 func (ps *PandoStore) updateCache(provider peer.ID, c cid.Cid) error {
-	mux, ok := ps.mutex[provider]
+	mux, ok := ps.providerMutex[provider]
 	if !ok {
-		ps.mutex[provider] = new(sync.Mutex)
-		mux = ps.mutex[provider]
+		ps.providerMutex[provider] = new(sync.Mutex)
+		mux = ps.providerMutex[provider]
 	}
 	mux.Lock()
 	defer mux.Unlock()
@@ -108,7 +199,9 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 	}
 	// avoid closed channel
 	ps.snapshotDone = make(chan struct{})
+	ps.stateMutex.Lock()
 	ps.state = store.SnapShoting
+	ps.stateMutex.Unlock()
 	// wait processing tasks finish
 	ps.taskInProcessing.Wait()
 
@@ -132,7 +225,9 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 	ps.waitForSnapshot = make(map[peer.ID][]cid.Cid)
 	// release blocked tasks
 	close(ps.snapshotDone)
+	ps.stateMutex.Lock()
 	ps.state = store.Working
+	ps.stateMutex.Unlock()
 
 	return nil
 }
@@ -194,4 +289,33 @@ func (ps *PandoStore) run() error {
 	}()
 
 	return nil
+}
+
+func (ps *PandoStore) Close() error {
+	// block incoming store/get
+	ps.stateMutex.Lock()
+	if ps.state == store.Closing {
+		log.Warnf("close repeatly....")
+		return nil
+	}
+	ps.state = store.Closing
+	ps.stateMutex.Unlock()
+
+	// wait processing tasks
+	ps.taskInProcessing.Wait()
+	err := ps.metaStore.Close()
+	if err != nil {
+		return err
+	}
+	err = ps.metaStateStore.Close()
+	if err != nil {
+		return err
+	}
+	err = ps.SnapShotStore.Close()
+	if err != nil {
+		return err
+	}
+	// close context
+	ps.cncl()
+	return ps.basicDS.Close()
 }

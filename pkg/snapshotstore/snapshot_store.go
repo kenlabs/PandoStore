@@ -214,3 +214,9 @@ func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbo
 	}
 	return snapshot, nil
 }
+
+func (s *SnapShotStore) Close() error {
+	s.snapShotMutex.Lock()
+	defer s.snapShotMutex.Unlock()
+	return nil
+}

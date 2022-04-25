@@ -34,7 +34,7 @@ type MetaStateStore struct {
 	cncl         context.CancelFunc
 }
 
-func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*MetaStateStore, error) {
+func New(ctx context.Context, ds datastore.Batching, as adt.Store) (*MetaStateStore, error) {
 	reg, err := registry.New(ctx, ds)
 	if err != nil {
 		return nil, err
@@ -42,12 +42,12 @@ func New(ctx context.Context, ds datastore.Batching, cs adt.Store) (*MetaStateSt
 	childCtx, cncl := context.WithCancel(ctx)
 	ps := &MetaStateStore{
 		ds:       ds,
-		cs:       cs,
+		cs:       as,
 		ctx:      childCtx,
 		cncl:     cncl,
 		registry: reg,
 	}
-	err = ps.init(ctx)
+	err = ps.init(childCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MetaStateStore, err: %v", err)
 	}
@@ -180,4 +180,15 @@ func (ps *MetaStateStore) GetMetaInfo(ctx context.Context, c cid.Cid) (*cbortype
 func (ps *MetaStateStore) GetProviderInfo(ctx context.Context, p peer.ID) (*registry.ProviderInfo, error) {
 	info, err := ps.registry.ProviderInfo(ctx, p)
 	return info, err
+}
+
+func (ps *MetaStateStore) Close() error {
+	ps.workingTasks.Wait()
+	ps.cncl()
+	_, err := ps.root.Root()
+	if err != nil {
+		log.Errorf("failed to flush hamt to store, err: %v", err)
+		return err
+	}
+	return nil
 }

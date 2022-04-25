@@ -15,8 +15,11 @@ require (
 )
 
 require (
+	github.com/ipfs/go-ds-leveldb v0.5.0
 	github.com/ipfs/go-log/v2 v2.0.5
 	github.com/ipld/go-ipld-prime v0.16.0
 	github.com/multiformats/go-multicodec v0.4.1
+	github.com/smartystreets/goconvey v1.6.4
+	golang.org/x/sys v0.0.0-20210309074719-68d13333faf2
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 )

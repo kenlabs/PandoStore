@@ -65,7 +65,7 @@ func TestRoundTripPandoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil, nil)
+	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -83,7 +83,7 @@ func TestRoundTripPandoStore(t *testing.T) {
 	}
 	t.Logf("%#v", snapshot)
 
-	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil, nil)
+	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil)
 	assert.Contains(t, err.Error(), "key has existed")
 
 	snapshot, err = store.SnapShotStore.GetSnapShotByCid(ctx, cid3)
@@ -96,4 +96,32 @@ func TestRoundTripPandoStore(t *testing.T) {
 	t.Logf("%v", pinfo)
 
 	//time.Sleep(time.Second * 999)
+}
+
+func TestRestartPandoStore(t *testing.T) {
+	_ = logging.SetLogLevel("PandoStore", "debug")
+	ctx := context.Background()
+	testdir := t.TempDir()
+	cfg := &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        "",
+		Dir:              testdir,
+		SnapShotInterval: "1s",
+	}
+	db, err := LoadStoreFromConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	//db, err = LoadStoreFromConfig(ctx, cfg)
+	//if err != nil {
+	//	t.Fatal(err)
+	//}
 }
