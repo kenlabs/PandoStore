@@ -161,7 +161,16 @@ func (ps *MetaStateStore) ProvidersUpdateMeta(ctx context.Context, update map[pe
 
 func (ps *MetaStateStore) MetaStateRoot() (cid.Cid, error) {
 	ps.workingTasks.Wait()
-	return ps.root.Root()
+	root, err := ps.root.Root()
+	if err != nil {
+		return cid.Undef, err
+	}
+	err = ps.ds.Put(context.Background(), datastore.NewKey(rootKey), root.Bytes())
+	if err != nil {
+		log.Errorf("failed to save hamt root in datastore, err:%v", err)
+		return cid.Undef, err
+	}
+	return root, nil
 }
 
 func (ps *MetaStateStore) GetMetaInfo(ctx context.Context, c cid.Cid) (*cbortypes.MetaState, error) {
@@ -185,9 +194,14 @@ func (ps *MetaStateStore) GetProviderInfo(ctx context.Context, p peer.ID) (*regi
 func (ps *MetaStateStore) Close() error {
 	ps.workingTasks.Wait()
 	ps.cncl()
-	_, err := ps.root.Root()
+	c, err := ps.root.Root()
 	if err != nil {
 		log.Errorf("failed to flush hamt to store, err: %v", err)
+		return err
+	}
+	err = ps.ds.Put(context.Background(), datastore.NewKey(rootKey), c.Bytes())
+	if err != nil {
+		log.Errorf("failed to save hamt root in datastore, err:%v", err)
 		return err
 	}
 	return nil

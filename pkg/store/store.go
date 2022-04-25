@@ -44,20 +44,35 @@ type PandoStore struct {
 	cncl             context.CancelFunc
 }
 
-func NewPandoStore(ctx context.Context, ms *metastore.MetaStore, ps *statestore.MetaStateStore, sstore *snapshotstore.SnapShotStore, cfg *config.StoreConfig) (*PandoStore, error) {
+func NewStoreFromDatastore(ctx context.Context, ds datastore.Batching, cfg *config.StoreConfig) (*PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
+	mutexDatastore := dtsync.MutexWrap(ds)
+	bs := blockstore.NewBlockstore(mutexDatastore)
+	cs := cbor.NewCborStore(bs)
+	as := adt.WrapStore(childCtx, cs)
+	metaStore, _ := metastore.New(mutexDatastore)
+	stateStore, err := statestore.New(childCtx, mutexDatastore, as)
+	if err != nil {
+		cncl()
+		return nil, err
+	}
+	snapStore, _ := snapshotstore.NewStore(childCtx, mutexDatastore, cs)
+
 	s := &PandoStore{
-		ctx:             childCtx,
-		cncl:            cncl,
+		ctx:  childCtx,
+		cncl: cncl,
+		//stateMutex:      sync.RWMutex{},
 		providerMutex:   make(map[peer.ID]*sync.Mutex),
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
-		metaStore:       ms,
-		metaStateStore:  ps,
-		SnapShotStore:   sstore,
+		basicDS:         mutexDatastore,
+		metaStore:       metaStore,
+		metaStateStore:  stateStore,
+		SnapShotStore:   snapStore,
 		cfg:             cfg,
 	}
-	err := s.run()
+	err = s.run()
 	if err != nil {
+		cncl()
 		return nil, err
 	}
 
@@ -65,7 +80,7 @@ func NewPandoStore(ctx context.Context, ms *metastore.MetaStore, ps *statestore.
 
 }
 
-func LoadStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoStore, error) {
+func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
 	if cfg.Type != "levelds" {
 		cncl()
@@ -101,7 +116,7 @@ func LoadStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSt
 	mutexDatastore := dtsync.MutexWrap(dataStore)
 	bs := blockstore.NewBlockstore(mutexDatastore)
 	cs := cbor.NewCborStore(bs)
-	as := adt.WrapStore(ctx, cs)
+	as := adt.WrapStore(childCtx, cs)
 	metaStore, _ := metastore.New(mutexDatastore)
 	stateStore, err := statestore.New(childCtx, mutexDatastore, as)
 	if err != nil {
@@ -123,6 +138,7 @@ func LoadStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSt
 	}
 	err = s.run()
 	if err != nil {
+		cncl()
 		return nil, err
 	}
 
@@ -144,6 +160,8 @@ func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provide
 			return fmt.Errorf("unknown work state: %v", ps.state)
 		}
 
+	} else {
+		ps.stateMutex.RUnlock()
 	}
 	ps.taskInProcessing.Add(1)
 	defer ps.taskInProcessing.Done()

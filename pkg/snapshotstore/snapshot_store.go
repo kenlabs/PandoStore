@@ -199,20 +199,20 @@ func (s *SnapShotStore) GetSnapShotByCid(ctx context.Context, c cid.Cid) (*cbort
 	return res, nil
 }
 
-func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbortypes.SnapShot, error) {
+func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbortypes.SnapShot, cid.Cid, error) {
 	slist, err := s.loadSnapShotList(ctx)
 	if err != nil {
-		return nil, err
+		return nil, cid.Undef, err
 	}
 	if len(*slist) == 0 || h+1 > uint64(len(*slist)) {
-		return nil, fmt.Errorf("invalid height: %d", h)
+		return nil, cid.Undef, fmt.Errorf("invalid height: %d", h)
 	}
-
-	snapshot, err := s.GetSnapShotByCid(ctx, (*slist)[h])
+	c := (*slist)[h]
+	snapshot, err := s.GetSnapShotByCid(ctx, c)
 	if err != nil {
-		return nil, err
+		return nil, cid.Undef, err
 	}
-	return snapshot, nil
+	return snapshot, c, nil
 }
 
 func (s *SnapShotStore) Close() error {
