@@ -91,19 +91,15 @@ func (ps *MetaStateStore) init(ctx context.Context) error {
 	return nil
 }
 
-func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key string, metaContext []byte) error {
+func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key cid.Cid, metaContext []byte) error {
 	ps.workingTasks.Add(1)
 	defer ps.workingTasks.Done()
-	c, err := cid.Decode(key)
-	if err != nil {
-		return fmt.Errorf("key must be valid cid, err :%v", err)
-	}
-	err = ps.registry.UpdateProviderInfo(ctx, provider, c, 0)
+	err := ps.registry.UpdateProviderInfo(ctx, provider, key, 0)
 	if err != nil {
 		return err
 	}
 	hkey := hamt.StateKey{
-		Meta: c,
+		Meta: key,
 	}
 
 	exist, err := ps.root.Get(hkey, nil)

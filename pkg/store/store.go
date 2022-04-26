@@ -1,6 +1,7 @@
 package store
 
 import (
+	"PandoStore/pkg"
 	"PandoStore/pkg/config"
 	"PandoStore/pkg/metastore"
 	"PandoStore/pkg/snapshotstore"
@@ -26,6 +27,7 @@ import (
 )
 
 var log = logging.Logger("PandoStore")
+var _ pkg.PandoStore = &PandoStore{}
 
 type PandoStore struct {
 	cfg *config.StoreConfig
@@ -145,7 +147,11 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 	return s, nil
 }
 
-func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provider peer.ID, metaContext []byte) error {
+func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provider peer.ID, metaContext []byte) error {
+	if !key.Defined() {
+		return fmt.Errorf("invalid cid")
+	}
+
 	ps.stateMutex.RLock()
 	if ps.state != store.Working {
 		if ps.state == store.SnapShoting {
@@ -154,7 +160,7 @@ func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provide
 			<-ps.snapshotDone
 		} else if ps.state == store.Closing {
 			ps.stateMutex.Unlock()
-			return fmt.Errorf("pandostore is closing, failed to store: %s", key)
+			return fmt.Errorf("pandostore is closing, failed to store: %s", key.String())
 		} else {
 			ps.stateMutex.Unlock()
 			return fmt.Errorf("unknown work state: %v", ps.state)
@@ -165,11 +171,6 @@ func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provide
 	}
 	ps.taskInProcessing.Add(1)
 	defer ps.taskInProcessing.Done()
-
-	c, err := cid.Decode(key)
-	if err != nil {
-		return err
-	}
 
 	// key has existed or failed to check
 	if ok, err := ps.metaStore.CheckExisted(ctx, key); err != nil || ok {
@@ -186,14 +187,14 @@ func (ps *PandoStore) Store(ctx context.Context, key string, val []byte, provide
 		return err
 	}
 
-	if err := ps.updateCache(provider, c); err != nil {
+	if err := ps.updateCache(provider, key); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (ps *PandoStore) Get(ctx context.Context, key string) ([]byte, error) {
+func (ps *PandoStore) Get(ctx context.Context, key cid.Cid) ([]byte, error) {
 	return ps.metaStore.Get(ctx, key)
 }
 
@@ -254,7 +255,7 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 	res := &store.MetaInclusion{}
 	res.ID = c
 
-	ok, err := ps.metaStore.CheckExisted(ctx, c.String())
+	ok, err := ps.metaStore.CheckExisted(ctx, c)
 	if err != nil {
 		return nil, err
 	}

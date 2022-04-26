@@ -29,8 +29,8 @@ func TestMapSaveAndLoad(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	state1 := new(cbortypes.ProviderState)
-	state2 := new(cbortypes.ProviderState)
+	state1 := new(cbortypes.MetaState)
+	state2 := new(cbortypes.MetaState)
 
 	testCid1, _ := cid.Decode("bafy2bzaceamp42wmmgr2g2ymg46euououzfyck7szknvfacqscohrvaikwfaa")
 	testCid2, _ := cid.Decode("bafy2bzaceamp42wmmgr2g2ymg46euououzfyck7szknvfacqscohrvaikwfab")

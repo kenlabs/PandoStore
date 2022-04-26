@@ -44,7 +44,7 @@ func TestRoundTripPandoStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
-	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil)
+	err = store.Store(ctx, cid1, []byte("testdata1"), peer1, nil)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -62,7 +62,7 @@ func TestRoundTripPandoStore(t *testing.T) {
 	}
 	t.Logf("%#v", snapshot)
 
-	err = store.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil)
+	err = store.Store(ctx, cid1, []byte("testdata1"), peer1, nil)
 	assert.Contains(t, err.Error(), "key has existed")
 
 	snapshot, err = store.SnapShotStore.GetSnapShotByCid(ctx, cid2)
@@ -91,7 +91,7 @@ func TestRestartPandoStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.Store(ctx, cid1.String(), []byte("testdata1"), peer1, nil)
+	err = db.Store(ctx, cid1, []byte("testdata1"), peer1, nil)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -112,7 +112,7 @@ func TestRestartPandoStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	val, err := db.Get(ctx, cid1.String())
+	val, err := db.Get(ctx, cid1)
 	if err != nil {
 		t.Fatal(err)
 	}
