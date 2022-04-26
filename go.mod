@@ -1,4 +1,4 @@
-module PandoStore
+module github.com/kenlabs/PandoStore
 
 go 1.16
 

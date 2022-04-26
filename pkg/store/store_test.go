@@ -1,12 +1,12 @@
 package store
 
 import (
-	"PandoStore/pkg/config"
 	"context"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/kenlabs/PandoStore/pkg/config"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/assert"

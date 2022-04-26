@@ -1,8 +1,8 @@
 package hamt
 
 import (
-	"PandoStore/pkg/types/cbortypes"
 	"context"
+	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	//"github.com/kenlabs/pando/pkg/statetree/types"
 	"github.com/stretchr/testify/assert"
 	//"github.com/kenlabs/pando/statetree/hamt"

@@ -1,8 +1,6 @@
 package snapshotstore
 
 import (
-	"PandoStore/pkg/hamt"
-	"PandoStore/pkg/types/cbortypes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +8,8 @@ import (
 	"github.com/ipfs/go-datastore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/kenlabs/PandoStore/pkg/hamt"
+	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"sync"
 	"time"
