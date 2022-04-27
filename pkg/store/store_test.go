@@ -68,7 +68,7 @@ func TestRoundTripPandoStore(t *testing.T) {
 	snapshot, err = store.SnapShotStore.GetSnapShotByCid(ctx, cid2)
 	assert.Contains(t, err.Error(), "not found")
 
-	pinfo, err := store.metaStateStore.GetProviderInfo(ctx, peer1)
+	pinfo, err := store.StateStore.GetProviderInfo(ctx, peer1)
 	if err != nil {
 		t.Fatal(err)
 	}

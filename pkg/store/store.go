@@ -39,7 +39,7 @@ type PandoStore struct {
 	taskInProcessing sync.WaitGroup
 	basicDS          datastore.Batching
 	metaStore        *metastore.MetaStore
-	metaStateStore   *statestore.MetaStateStore
+	StateStore       *statestore.MetaStateStore
 	SnapShotStore    *snapshotstore.SnapShotStore
 	waitForSnapshot  map[peer.ID][]cid.Cid
 	ctx              context.Context
@@ -68,7 +68,7 @@ func NewStoreFromDatastore(ctx context.Context, ds datastore.Batching, cfg *conf
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
 		basicDS:         mutexDatastore,
 		metaStore:       metaStore,
-		metaStateStore:  stateStore,
+		StateStore:      stateStore,
 		SnapShotStore:   snapStore,
 		cfg:             cfg,
 	}
@@ -134,7 +134,7 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
 		basicDS:         mutexDatastore,
 		metaStore:       metaStore,
-		metaStateStore:  stateStore,
+		StateStore:      stateStore,
 		SnapShotStore:   snapStore,
 		cfg:             cfg,
 	}
@@ -183,7 +183,7 @@ func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provid
 	}
 
 	// update meta state and provider info
-	if err := ps.metaStateStore.ProviderAddMeta(ctx, provider, key, metaContext); err != nil {
+	if err := ps.StateStore.ProviderAddMeta(ctx, provider, key, metaContext); err != nil {
 		return err
 	}
 
@@ -224,7 +224,7 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 	// wait processing tasks finish
 	ps.taskInProcessing.Wait()
 
-	root, err := ps.metaStateStore.MetaStateRoot()
+	root, err := ps.StateStore.MetaStateRoot()
 	if err != nil {
 		return err
 	}
@@ -234,7 +234,7 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 		return err
 	}
 	// update provider state
-	err = ps.metaStateStore.ProvidersUpdateMeta(ctx, ps.waitForSnapshot, snapshot, c)
+	err = ps.StateStore.ProvidersUpdateMeta(ctx, ps.waitForSnapshot, snapshot, c)
 	if err != nil {
 		return err
 	}
@@ -264,7 +264,7 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 		return res, nil
 	}
 
-	info, err := ps.metaStateStore.GetMetaInfo(ctx, c)
+	info, err := ps.StateStore.GetMetaInfo(ctx, c)
 	if err != nil {
 		log.Errorf("meta existed but failed to get meta state, err: %v", err)
 		return nil, err
@@ -326,7 +326,7 @@ func (ps *PandoStore) Close() error {
 	if err != nil {
 		return err
 	}
-	err = ps.metaStateStore.Close()
+	err = ps.StateStore.Close()
 	if err != nil {
 		return err
 	}
