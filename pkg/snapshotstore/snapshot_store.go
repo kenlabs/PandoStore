@@ -8,6 +8,7 @@ import (
 	"github.com/ipfs/go-datastore"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	logging "github.com/ipfs/go-log/v2"
+	storeError "github.com/kenlabs/PandoStore/pkg/error"
 	"github.com/kenlabs/PandoStore/pkg/hamt"
 	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -205,7 +206,8 @@ func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbo
 		return nil, cid.Undef, err
 	}
 	if len(*slist) == 0 || h+1 > uint64(len(*slist)) {
-		return nil, cid.Undef, fmt.Errorf("invalid height: %d", h)
+		log.Errorf("invalid height: %d", h)
+		return nil, cid.Undef, storeError.InvalidParameters
 	}
 	c := (*slist)[h]
 	snapshot, err := s.GetSnapShotByCid(ctx, c)
