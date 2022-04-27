@@ -40,7 +40,7 @@ func NewStore(ctx context.Context, ds datastore.Batching, cs cbor.IpldStore) (*S
 }
 
 func (s *SnapShotStore) init(ctx context.Context) error {
-	slist, err := s.loadSnapShotList(ctx)
+	slist, err := s.GetSnapShotList(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func (s *SnapShotStore) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *SnapShotStore) loadSnapShotList(ctx context.Context) (*[]cid.Cid, error) {
+func (s *SnapShotStore) GetSnapShotList(ctx context.Context) (*[]cid.Cid, error) {
 	snapShotList, err := s.ds.Get(ctx, datastore.NewKey(SnapShotListKey))
 	if err == nil && snapShotList != nil {
 		res := []cid.Cid{}
@@ -200,7 +200,7 @@ func (s *SnapShotStore) GetSnapShotByCid(ctx context.Context, c cid.Cid) (*cbort
 }
 
 func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbortypes.SnapShot, cid.Cid, error) {
-	slist, err := s.loadSnapShotList(ctx)
+	slist, err := s.GetSnapShotList(ctx)
 	if err != nil {
 		return nil, cid.Undef, err
 	}
