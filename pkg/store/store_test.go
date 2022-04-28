@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dtsync "github.com/ipfs/go-datastore/sync"
 	logging "github.com/ipfs/go-log/v2"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/kenlabs/PandoStore/pkg/config"
@@ -38,9 +39,10 @@ func TestRoundTripPandoStore(t *testing.T) {
 
 	ctx := context.Background()
 	ds := datastore.NewMapDatastore()
+	mds := dtsync.MutexWrap(ds)
 
 	cfg := &config.StoreConfig{SnapShotInterval: time.Second.String()}
-	store, err := NewStoreFromDatastore(ctx, ds, cfg)
+	store, err := NewStoreFromDatastore(ctx, mds, cfg)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}

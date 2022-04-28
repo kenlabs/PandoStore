@@ -2,7 +2,6 @@ package store
 
 import (
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
-	"github.com/ipfs/go-datastore"
 	dtsync "github.com/ipfs/go-datastore/sync"
 	dataStoreFactory "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -37,7 +36,7 @@ type PandoStore struct {
 	state            store.StoreState
 	snapshotDone     chan struct{}
 	taskInProcessing sync.WaitGroup
-	basicDS          datastore.Batching
+	BasicDS          *dtsync.MutexDatastore
 	metaStore        *metastore.MetaStore
 	StateStore       *statestore.MetaStateStore
 	SnapShotStore    *snapshotstore.SnapShotStore
@@ -46,27 +45,25 @@ type PandoStore struct {
 	cncl             context.CancelFunc
 }
 
-func NewStoreFromDatastore(ctx context.Context, ds datastore.Batching, cfg *config.StoreConfig) (*PandoStore, error) {
+func NewStoreFromDatastore(ctx context.Context, mds *dtsync.MutexDatastore, cfg *config.StoreConfig) (*PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
-	mutexDatastore := dtsync.MutexWrap(ds)
-	bs := blockstore.NewBlockstore(mutexDatastore)
+	bs := blockstore.NewBlockstore(mds)
 	cs := cbor.NewCborStore(bs)
 	as := adt.WrapStore(childCtx, cs)
-	metaStore, _ := metastore.New(mutexDatastore)
-	stateStore, err := statestore.New(childCtx, mutexDatastore, as)
+	metaStore, _ := metastore.New(mds)
+	stateStore, err := statestore.New(childCtx, mds, as)
 	if err != nil {
 		cncl()
 		return nil, err
 	}
-	snapStore, _ := snapshotstore.NewStore(childCtx, mutexDatastore, cs)
+	snapStore, _ := snapshotstore.NewStore(childCtx, mds, cs)
 
 	s := &PandoStore{
-		ctx:  childCtx,
-		cncl: cncl,
-		//stateMutex:      sync.RWMutex{},
+		ctx:             childCtx,
+		cncl:            cncl,
 		providerMutex:   make(map[peer.ID]*sync.Mutex),
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
-		basicDS:         mutexDatastore,
+		BasicDS:         mds,
 		metaStore:       metaStore,
 		StateStore:      stateStore,
 		SnapShotStore:   snapStore,
@@ -132,7 +129,7 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 		cncl:            cncl,
 		providerMutex:   make(map[peer.ID]*sync.Mutex),
 		waitForSnapshot: make(map[peer.ID][]cid.Cid),
-		basicDS:         mutexDatastore,
+		BasicDS:         mutexDatastore,
 		metaStore:       metaStore,
 		StateStore:      stateStore,
 		SnapShotStore:   snapStore,
@@ -336,5 +333,5 @@ func (ps *PandoStore) Close() error {
 	}
 	// close context
 	ps.cncl()
-	return ps.basicDS.Close()
+	return ps.BasicDS.Close()
 }

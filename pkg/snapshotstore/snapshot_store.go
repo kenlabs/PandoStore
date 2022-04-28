@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dtsync "github.com/ipfs/go-datastore/sync"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	logging "github.com/ipfs/go-log/v2"
 	storeError "github.com/kenlabs/PandoStore/pkg/error"
@@ -24,7 +25,7 @@ const (
 var log = logging.Logger("SnapShotStore")
 
 type SnapShotStore struct {
-	ds            datastore.Batching
+	mds           *dtsync.MutexDatastore
 	cs            cbor.IpldStore
 	root          hamt.Map
 	curSnapShot   cid.Cid
@@ -32,10 +33,10 @@ type SnapShotStore struct {
 	snapShotMutex sync.Mutex
 }
 
-func NewStore(ctx context.Context, ds datastore.Batching, cs cbor.IpldStore) (*SnapShotStore, error) {
+func NewStore(ctx context.Context, mds *dtsync.MutexDatastore, cs cbor.IpldStore) (*SnapShotStore, error) {
 	store := &SnapShotStore{
-		ds: ds,
-		cs: cs,
+		mds: mds,
+		cs:  cs,
 	}
 	return store, nil
 }
@@ -59,44 +60,11 @@ func (s *SnapShotStore) init(ctx context.Context) error {
 		s.curHeight = 0
 	}
 
-	//load or creat hamt
-	//if s.ds == nil || s.cs == nil {
-	//	return fmt.Errorf("nil database")
-	//}
-	//root, err := s.ds.Get(ctx, datastore.NewKey(rootKey))
-	//if err != nil {
-	//	return err
-	//}
-
-	//// find root and load
-	//if err == nil && root != nil {
-	//	_, rootcid, err := cid.CidFromBytes(root)
-	//	if err != nil {
-	//		return fmt.Errorf("failed to load ProviderStore root")
-	//	}
-	//	log.Debugf("find root cid %s, loading...", rootcid.String())
-	//
-	//	m, err := adt.AsMap(s.cs, rootcid, builtin.DefaultHamtBitwidth)
-	//	// failed to load hamt root
-	//	if err != nil {
-	//		return fmt.Errorf("failed to load hamt root from cid: %s\r\n%s", rootcid.String(), err.Error())
-	//	}
-	//	// load root successfully
-	//	s.root = m
-	//	return nil
-	//}
-	//
-	//// create new hamt
-	//emptyRoot, err := adt.MakeEmptyMap(s.cs, builtin.DefaultHamtBitwidth)
-	//if err != nil {
-	//	return err
-	//}
-	//s.root = emptyRoot
 	return nil
 }
 
 func (s *SnapShotStore) GetSnapShotList(ctx context.Context) (*[]cid.Cid, error) {
-	snapShotList, err := s.ds.Get(ctx, datastore.NewKey(SnapShotListKey))
+	snapShotList, err := s.mds.Get(ctx, datastore.NewKey(SnapShotListKey))
 	if err == nil && snapShotList != nil {
 		res := []cid.Cid{}
 		err := json.Unmarshal(snapShotList, &res)
@@ -156,7 +124,7 @@ func (s *SnapShotStore) GenerateSnapShot(ctx context.Context, update map[peer.ID
 }
 
 func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.Cid) error {
-	snapShotList, err := s.ds.Get(ctx, datastore.NewKey(SnapShotListKey))
+	snapShotList, err := s.mds.Get(ctx, datastore.NewKey(SnapShotListKey))
 	if err == nil && snapShotList != nil {
 		var ssCidList []cid.Cid
 		err := json.Unmarshal(snapShotList, &ssCidList)
@@ -169,9 +137,9 @@ func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.
 		if err != nil {
 			return fmt.Errorf("failed to marshal the cidlist of snapshot. %s", err.Error())
 		}
-		err = s.ds.Put(ctx, datastore.NewKey(SnapShotListKey), ssCidListBytes)
+		err = s.mds.Put(ctx, datastore.NewKey(SnapShotListKey), ssCidListBytes)
 		if err != nil {
-			return fmt.Errorf("failed to save the new snap shot cid list in ds")
+			return fmt.Errorf("failed to save the new snap shot cid list in mds")
 		}
 	} else {
 		ssCidList := []cid.Cid{newSsCid}
@@ -179,9 +147,9 @@ func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.
 		if err != nil {
 			return fmt.Errorf("failed to marshal the cidlist of snapshot. %s", err.Error())
 		}
-		err = s.ds.Put(ctx, datastore.NewKey(SnapShotListKey), ssCidListBytes)
+		err = s.mds.Put(ctx, datastore.NewKey(SnapShotListKey), ssCidListBytes)
 		if err != nil {
-			return fmt.Errorf("failed to save the new snap shot cid list in ds")
+			return fmt.Errorf("failed to save the new snap shot cid list in mds")
 		}
 	}
 	return nil

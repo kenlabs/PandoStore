@@ -4,26 +4,27 @@ import (
 	"context"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dtsync "github.com/ipfs/go-datastore/sync"
 )
 
 type MetaStore struct {
-	ds datastore.Batching
+	mds *dtsync.MutexDatastore
 }
 
-func New(ds datastore.Batching) (*MetaStore, error) {
-	return &MetaStore{ds: ds}, nil
+func New(mds *dtsync.MutexDatastore) (*MetaStore, error) {
+	return &MetaStore{mds: mds}, nil
 }
 
 func (ms *MetaStore) CheckExisted(ctx context.Context, key cid.Cid) (bool, error) {
-	return ms.ds.Has(ctx, datastore.NewKey(key.String()))
+	return ms.mds.Has(ctx, datastore.NewKey(key.String()))
 }
 
 func (ms *MetaStore) Put(ctx context.Context, key cid.Cid, val []byte) error {
-	return ms.ds.Put(ctx, datastore.NewKey(key.String()), val)
+	return ms.mds.Put(ctx, datastore.NewKey(key.String()), val)
 }
 
 func (ms *MetaStore) Get(ctx context.Context, key cid.Cid) ([]byte, error) {
-	return ms.ds.Get(ctx, datastore.NewKey(key.String()))
+	return ms.mds.Get(ctx, datastore.NewKey(key.String()))
 }
 
 func (ms *MetaStore) Close() error {

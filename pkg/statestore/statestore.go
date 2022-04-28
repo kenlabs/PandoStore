@@ -7,6 +7,7 @@ import (
 	"github.com/filecoin-project/specs-actors/v5/actors/util/adt"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dtsync "github.com/ipfs/go-datastore/sync"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/kenlabs/PandoStore/pkg/hamt"
 	"github.com/kenlabs/PandoStore/pkg/metastore"
@@ -34,14 +35,14 @@ type MetaStateStore struct {
 	cncl         context.CancelFunc
 }
 
-func New(ctx context.Context, ds datastore.Batching, as adt.Store) (*MetaStateStore, error) {
-	reg, err := registry.New(ctx, ds)
+func New(ctx context.Context, mds *dtsync.MutexDatastore, as adt.Store) (*MetaStateStore, error) {
+	reg, err := registry.New(ctx, mds)
 	if err != nil {
 		return nil, err
 	}
 	childCtx, cncl := context.WithCancel(ctx)
 	ps := &MetaStateStore{
-		ds:       ds,
+		ds:       mds,
 		cs:       as,
 		ctx:      childCtx,
 		cncl:     cncl,
