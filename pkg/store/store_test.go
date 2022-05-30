@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/assert"
+	"path"
 	"testing"
 	"time"
 )
@@ -83,10 +84,11 @@ func TestRestartPandoStore(t *testing.T) {
 	_ = logging.SetLogLevel("PandoStore", "debug")
 	ctx := context.Background()
 	testdir := t.TempDir()
+	testStoreDir := path.Join(testdir, "teststore")
 	cfg := &config.StoreConfig{
 		Type:             "levelds",
 		StoreRoot:        "",
-		Dir:              testdir,
+		Dir:              testStoreDir,
 		SnapShotInterval: "1s",
 	}
 	db, err := NewStoreFromConfig(ctx, cfg)

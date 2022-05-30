@@ -9,6 +9,7 @@ import (
 	"github.com/kenlabs/PandoStore/pkg"
 	"github.com/kenlabs/PandoStore/pkg/config"
 	"github.com/kenlabs/PandoStore/pkg/metastore"
+	"github.com/kenlabs/PandoStore/pkg/migrate"
 	"github.com/kenlabs/PandoStore/pkg/snapshotstore"
 	"github.com/kenlabs/PandoStore/pkg/statestore"
 	"github.com/kenlabs/PandoStore/pkg/system"
@@ -81,8 +82,8 @@ func NewStoreFromDatastore(ctx context.Context, mds *dtsync.MutexDatastore, cfg 
 
 func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
+	defer cncl()
 	if cfg.Type != "levelds" {
-		cncl()
 		return nil, fmt.Errorf("only levelds datastore type supported")
 	}
 	if cfg.Dir == "" {
@@ -93,23 +94,30 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 	if !dataStoreDirExists {
 		err := os.MkdirAll(dataStoreDir, 0755)
 		if err != nil {
-			cncl()
 			return nil, err
 		}
 	}
 
 	writable, err := system.IsDirWritable(dataStoreDir)
 	if err != nil {
-		cncl()
 		return nil, err
 	}
 	if !writable {
-		cncl()
 		return nil, err
+	}
+	version, err := pkg.CheckVersion(dataStoreDir)
+	if err != nil {
+		return nil, err
+	}
+	// migrate
+	if version != pkg.CurrentVersion {
+		err = migrate.Migrate(version, pkg.CurrentVersion, dataStoreDir, false)
+		if err != nil {
+			return nil, err
+		}
 	}
 	dataStore, err := dataStoreFactory.NewDatastore(dataStoreDir, nil)
 	if err != nil {
-		cncl()
 		return nil, err
 	}
 	mutexDatastore := dtsync.MutexWrap(dataStore)
@@ -119,7 +127,6 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 	metaStore, _ := metastore.New(mutexDatastore)
 	stateStore, err := statestore.New(childCtx, mutexDatastore, as)
 	if err != nil {
-		cncl()
 		return nil, err
 	}
 	snapStore, _ := snapshotstore.NewStore(childCtx, mutexDatastore, cs)
@@ -137,7 +144,6 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 	}
 	err = s.run()
 	if err != nil {
-		cncl()
 		return nil, err
 	}
 
