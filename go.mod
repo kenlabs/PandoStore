@@ -15,7 +15,9 @@ require (
 )
 
 require (
+	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-ds-leveldb v0.5.0
+	github.com/ipfs/go-ipfs-util v0.0.2
 	github.com/ipfs/go-log/v2 v2.0.5
 	github.com/ipld/go-ipld-prime v0.16.0
 	github.com/mitchellh/go-homedir v1.1.0
