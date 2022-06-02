@@ -40,7 +40,7 @@ type PandoStore struct {
 	BasicDS          *dtsync.MutexDatastore
 	metaStore        *metastore.MetaStore
 	StateStore       *statestore.MetaStateStore
-	SnapShotStore    *snapshotstore.SnapShotStore
+	snapShotStore    *snapshotstore.SnapShotStore
 	waitForSnapshot  map[peer.ID][]cid.Cid
 	ctx              context.Context
 	cncl             context.CancelFunc
@@ -67,7 +67,7 @@ func NewStoreFromDatastore(ctx context.Context, mds *dtsync.MutexDatastore, cfg 
 		BasicDS:         mds,
 		metaStore:       metaStore,
 		StateStore:      stateStore,
-		SnapShotStore:   snapStore,
+		snapShotStore:   snapStore,
 		cfg:             cfg,
 	}
 	err = s.run()
@@ -80,7 +80,7 @@ func NewStoreFromDatastore(ctx context.Context, mds *dtsync.MutexDatastore, cfg 
 
 }
 
-func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoStore, error) {
+func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (pkg.PandoStore, error) {
 	childCtx, cncl := context.WithCancel(ctx)
 	defer cncl()
 	if cfg.Type != "levelds" {
@@ -139,7 +139,7 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (*PandoSto
 		BasicDS:         mutexDatastore,
 		metaStore:       metaStore,
 		StateStore:      stateStore,
-		SnapShotStore:   snapStore,
+		snapShotStore:   snapStore,
 		cfg:             cfg,
 	}
 	err = s.run()
@@ -232,7 +232,7 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 		return err
 	}
 	// gen new snapshot
-	c, snapshot, err := ps.SnapShotStore.GenerateSnapShot(ctx, ps.waitForSnapshot, root)
+	c, snapshot, err := ps.snapShotStore.GenerateSnapShot(ctx, ps.waitForSnapshot, root)
 	if err != nil {
 		return err
 	}
@@ -293,6 +293,10 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 
 }
 
+func (ps *PandoStore) SnapShotStore() *snapshotstore.SnapShotStore {
+	return ps.snapShotStore
+}
+
 func (ps *PandoStore) run() error {
 	interval, err := time.ParseDuration(ps.cfg.SnapShotInterval)
 	if err != nil {
@@ -333,7 +337,7 @@ func (ps *PandoStore) Close() error {
 	if err != nil {
 		return err
 	}
-	err = ps.SnapShotStore.Close()
+	err = ps.snapShotStore.Close()
 	if err != nil {
 		return err
 	}
