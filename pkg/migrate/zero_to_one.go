@@ -2,7 +2,6 @@ package migrate
 
 import (
 	"context"
-	"fmt"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	dsns "github.com/ipfs/go-datastore/namespace"
@@ -43,7 +42,6 @@ Flag:
 	for {
 		select {
 		case c, exist := <-ch:
-			fmt.Printf("%s", c.String())
 			if !exist {
 				break Flag
 			}
