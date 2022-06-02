@@ -1,4 +1,4 @@
-package migrate
+package migrate_test
 
 import (
 	"context"
@@ -6,19 +6,47 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	dsns "github.com/ipfs/go-datastore/namespace"
 	"github.com/ipfs/go-datastore/query"
 	dtsync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	dshelp "github.com/ipfs/go-ipfs-ds-help"
 	u "github.com/ipfs/go-ipfs-util"
 	"github.com/kenlabs/PandoStore/pkg"
+	"github.com/kenlabs/PandoStore/pkg/config"
+	"github.com/kenlabs/PandoStore/pkg/metastore"
+	"github.com/kenlabs/PandoStore/pkg/migrate"
+	"github.com/kenlabs/PandoStore/pkg/store"
+	"github.com/stretchr/testify/assert"
+
+	//"github.com/kenlabs/PandoStore/pkg/store"
 	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"path"
 	"testing"
 )
 
-func genTestOldStore(t *testing.T, path string) error {
+var (
+	testdata1 = []byte("testdata1")
+	testdata2 = []byte("testdata2")
+	cid1      cid.Cid
+	cid2      cid.Cid
+)
+
+func init() {
 	u.Debug = true
+	var err error
+	cid1, err = cbortypes.LinkProto.Sum(testdata1)
+	if err != nil {
+		panic(err)
+	}
+	cid2, err = cbortypes.LinkProto.Sum(testdata2)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func genTestOldStore(t *testing.T, path string) error {
 	db, err := leveldb.NewDatastore(path, nil)
 	if err != nil {
 		return err
@@ -26,16 +54,6 @@ func genTestOldStore(t *testing.T, path string) error {
 	mds := dtsync.MutexWrap(db)
 	bs := blockstore.NewBlockstore(mds)
 
-	testdata1 := []byte("testdata1")
-	testdata2 := []byte("testdata2")
-	cid1, err := cbortypes.LinkProto.Sum(testdata1)
-	if err != nil {
-		return err
-	}
-	cid2, err := cbortypes.LinkProto.Sum(testdata2)
-	if err != nil {
-		return err
-	}
 	block1, err := blocks.NewBlockWithCid(testdata1, cid1)
 	if err != nil {
 		return err
@@ -62,13 +80,6 @@ func genTestOldStore(t *testing.T, path string) error {
 		return err
 	}
 
-	b, err := bs.Get(context.Background(), cid2)
-	if err != nil {
-		return err
-	}
-	t.Log(string(b.RawData()))
-	t.Log(b.String())
-
 	return mds.Close()
 }
 
@@ -79,7 +90,6 @@ func TestReadMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-	//storeDir := "/Users/zxh/.pando/_datastore"
 	ver, err := pkg.CheckVersion(oldStoreDir)
 	if err != nil {
 		t.Fatal(err)
@@ -152,18 +162,39 @@ func TestMigrate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-	err = Migrate(pkg.Version0, pkg.Version1, oldStoreDir, false)
+	err = migrate.Migrate(pkg.Version0, pkg.Version1, oldStoreDir, false)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
+	pdb, err := store.NewStoreFromConfig(context.Background(), &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        tmpDir,
+		Dir:              "datastore",
+		SnapShotInterval: "1s",
+	})
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	//cc1, _ := cid.Decode("bafkreeeasbo7ucewwtycwzph7q7xerhc")
+	//cc2, _ := cid.Decode("bafkreegrinl6sbzptamsocyba7ixjnwdb")
+
+	data1, err := pdb.Get(context.Background(), cid1)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	data2, err := pdb.Get(context.Background(), cid2)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	//assert.Equal(t, data1, testdata1)
+	//assert.Equal(t, data2, testdata2)
+	t.Log(string(data1))
+	t.Log(string(data2))
+
 }
 
 func TestBlockMigrate(t *testing.T) {
-	testdata1 := []byte("testdata1")
-	cid1, err := cbortypes.LinkProto.Sum(testdata1)
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Log(cid1.String())
 	ds := datastore.NewMapDatastore()
 	mds := dtsync.MutexWrap(ds)
@@ -171,7 +202,8 @@ func TestBlockMigrate(t *testing.T) {
 
 	ds2 := datastore.NewMapDatastore()
 	mds2 := dtsync.MutexWrap(ds2)
-	bs2 := blockstore.NewBlockstore(mds2)
+	//bs2 := blockstore.NewBlockstore(mds2)
+	metads := dsns.Wrap(ds2, metastore.MetaPrefix)
 
 	bk, err := blocks.NewBlockWithCid(testdata1, cid1)
 	if err != nil {
@@ -206,17 +238,63 @@ Flag:
 			}
 			t.Log(string(block.RawData()))
 
-			err = bs2.Put(context.Background(), block)
+			err = metads.Put(context.Background(), dshelp.MultihashToDsKey(c.Hash()), block.RawData())
 			if err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
 
-	res, err := bs2.Get(context.Background(), cid1)
+	err = metads.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log(string(res.RawData()))
+	newMetads := dsns.Wrap(mds2, metastore.MetaPrefix)
+	res, err := newMetads.Get(context.Background(), dshelp.MultihashToDsKey(cid1.Hash()))
+	t.Log(string(res))
+
+}
+
+func TestGetNodeByDifCid(t *testing.T) {
+	ds := datastore.NewMapDatastore()
+	bs := blockstore.NewBlockstore(ds)
+
+	bk, err := blocks.NewBlockWithCid(testdata1, cid1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = bs.Put(context.Background(), bk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log("cid1: ", cid1.String())
+	res, err := ds.Query(context.Background(), query.Query{
+		Prefix: "",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for r := range res.Next() {
+		t.Log(r.Entry.Key)
+	}
+
+	exist, err := bs.Has(context.Background(), cid1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(dshelp.MultihashToDsKey(cid1.Hash()))
+	assert.Equal(t, exist, true)
+
+	ch, err := bs.AllKeysChan(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//bs.Get()
+	for c := range ch {
+		t.Log(c.String())
+		t.Log(dshelp.MultihashToDsKey(c.Hash()))
+	}
 
 }
