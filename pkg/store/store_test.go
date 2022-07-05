@@ -157,16 +157,30 @@ func Test10KWritePandoStore(t *testing.T) {
 		t.Fatalf(err.Error())
 	}
 
+	keys := make([]cid.Cid, 0)
 	for i := 0; i < 10000; i++ {
 		data := make([]byte, rand.Int31n(1000))
 		rand.Read(data)
 		key, _ := cbortypes.LinkProto.Sum(data)
+		keys = append(keys, key)
 		provid := peers[rand.Intn(len(peers))]
 		err = store.Store(ctx, key, data, provid, nil)
 		if err != nil {
 			if assert.Contains(t, err.Error(), "key has existed or failed to check") {
 				continue
 			}
+			t.Fatal(err)
+		}
+	}
+
+	_, err = store.MetaInclusion(ctx, keys[len(keys)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 1000; i++ {
+		_, err = store.Get(ctx, keys[rand.Intn(len(keys))])
+		if err != nil {
 			t.Fatal(err)
 		}
 	}

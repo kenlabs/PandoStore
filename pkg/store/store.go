@@ -266,29 +266,30 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 		res.InPando = false
 		return res, nil
 	}
-
+	res.InPando = true
+	// get metaState, but the state may be queued for hamt
 	info, err := ps.StateStore.GetMetaInfo(ctx, c)
 	if err != nil {
-		log.Errorf("meta existed but failed to get meta state, err: %v", err)
-		return nil, err
-	}
-	res.InPando = true
-	res.Context = info.Context
-	p, err := peer.Decode(info.ProviderID)
-	if err != nil {
-		return nil, err
-	}
-	res.Provider = p
-
-	if info.SnapShotCid != "" {
-		scid, err := cid.Decode(info.SnapShotCid)
+		log.Warnf("meta existed but failed to get meta state, err: %v", err)
+		//return nil, err
+	} else {
+		res.Context = info.Context
+		p, err := peer.Decode(info.ProviderID)
 		if err != nil {
 			return nil, err
 		}
-		res.InSnapShot = true
-		res.SnapShotID = scid
-		res.SnapShotHeight = info.SnapShotHeight
+		res.Provider = p
+		if info.SnapShotCid != "" {
+			scid, err := cid.Decode(info.SnapShotCid)
+			if err != nil {
+				return nil, err
+			}
+			res.InSnapShot = true
+			res.SnapShotID = scid
+			res.SnapShotHeight = info.SnapShotHeight
+		}
 	}
+
 	return res, nil
 
 }
