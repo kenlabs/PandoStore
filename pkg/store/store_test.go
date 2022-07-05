@@ -8,9 +8,11 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/kenlabs/PandoStore/pkg/config"
+	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multicodec"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"path"
 	"testing"
 	"time"
@@ -33,6 +35,9 @@ var (
 	cid2, _ = lp.Sum(testdata2)
 	//cid3, _  = lp.Sum([]byte("testdata3"))
 	peer1, _ = peer.Decode("12D3KooWBckWLKiYoUX4k3HTrbrSe4DD5SPNTKgP6vKTva1NaRkJ")
+	peer2, _ = peer.Decode("12D3KooWNU48MUrPEoYh77k99RbskgftfmSm3CdkonijcM5VehS9")
+	peer3, _ = peer.Decode("12D3KooWNnK4gnNKmh6JUzRb34RqNcBahN5B8v18DsMxQ8mCqw81")
+	peers    = []peer.ID{peer1, peer2, peer3}
 )
 
 func TestRoundTripPandoStore(t *testing.T) {
@@ -136,5 +141,34 @@ func TestRestartPandoStore(t *testing.T) {
 	assert.Equal(t, info.Context, []byte(nil))
 	assert.Equal(t, info.Provider, peer1)
 	assert.Equal(t, info.SnapShotHeight, uint64(0))
+
+}
+
+func Test10KWritePandoStore(t *testing.T) {
+	_ = logging.SetLogLevel("PandoStore", "debug")
+
+	ctx := context.Background()
+	ds := datastore.NewMapDatastore()
+	mds := dtsync.MutexWrap(ds)
+
+	cfg := &config.StoreConfig{SnapShotInterval: time.Second.String()}
+	store, err := NewStoreFromDatastore(ctx, mds, cfg)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	for i := 0; i < 10000; i++ {
+		data := make([]byte, rand.Int31n(1000))
+		rand.Read(data)
+		key, _ := cbortypes.LinkProto.Sum(data)
+		provid := peers[rand.Intn(len(peers))]
+		err = store.Store(ctx, key, data, provid, nil)
+		if err != nil {
+			if assert.Contains(t, err.Error(), "key has existed or failed to check") {
+				continue
+			}
+			t.Fatal(err)
+		}
+	}
 
 }

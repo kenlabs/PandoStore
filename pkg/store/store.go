@@ -158,14 +158,14 @@ func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provid
 	ps.stateMutex.RLock()
 	if ps.state != store.Working {
 		if ps.state == store.SnapShoting {
-			ps.stateMutex.Unlock()
+			ps.stateMutex.RUnlock()
 			// wait snapshot finished
 			<-ps.snapshotDone
 		} else if ps.state == store.Closing {
-			ps.stateMutex.Unlock()
+			ps.stateMutex.RUnlock()
 			return fmt.Errorf("pandostore is closing, failed to store: %s", key.String())
 		} else {
-			ps.stateMutex.Unlock()
+			ps.stateMutex.RUnlock()
 			return fmt.Errorf("unknown work state: %v", ps.state)
 		}
 
