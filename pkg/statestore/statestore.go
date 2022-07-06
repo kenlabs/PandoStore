@@ -9,12 +9,13 @@ import (
 	"github.com/ipfs/go-datastore"
 	dtsync "github.com/ipfs/go-datastore/sync"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/kenlabs/PandoStore/pkg/error"
 	"github.com/kenlabs/PandoStore/pkg/hamt"
-	"github.com/kenlabs/PandoStore/pkg/metastore"
 	"github.com/kenlabs/PandoStore/pkg/statestore/registry"
 	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"sync"
+	"time"
 )
 
 var (
@@ -25,14 +26,22 @@ var (
 
 var log = logging.Logger("provider-store")
 
+type metaInfo struct {
+	provider    peer.ID
+	key         cid.Cid
+	metaContext []byte
+}
+
 type MetaStateStore struct {
-	ds           datastore.Batching
-	cs           adt.Store
-	workingTasks sync.WaitGroup
-	root         hamt.Map
-	registry     *registry.Registry
-	ctx          context.Context
-	cncl         context.CancelFunc
+	ds             datastore.Batching
+	cs             adt.Store
+	workingTasksWg sync.WaitGroup
+	workingCh      chan struct{}
+	queuedTasks    chan *metaInfo
+	root           hamt.Map
+	registry       *registry.Registry
+	ctx            context.Context
+	cncl           context.CancelFunc
 }
 
 func New(ctx context.Context, mds *dtsync.MutexDatastore, as adt.Store) (*MetaStateStore, error) {
@@ -42,17 +51,20 @@ func New(ctx context.Context, mds *dtsync.MutexDatastore, as adt.Store) (*MetaSt
 	}
 	childCtx, cncl := context.WithCancel(ctx)
 	ps := &MetaStateStore{
-		ds:       mds,
-		cs:       as,
-		ctx:      childCtx,
-		cncl:     cncl,
-		registry: reg,
+		ds:          mds,
+		cs:          as,
+		ctx:         childCtx,
+		queuedTasks: make(chan *metaInfo, 1024*16),
+		workingCh:   make(chan struct{}),
+		cncl:        cncl,
+		registry:    reg,
 	}
 	err = ps.init(childCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init MetaStateStore, err: %v", err)
 	}
 
+	go ps.work()
 	return ps, nil
 }
 
@@ -92,9 +104,24 @@ func (ps *MetaStateStore) init(ctx context.Context) error {
 	return nil
 }
 
-func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID, key cid.Cid, metaContext []byte) error {
-	ps.workingTasks.Add(1)
-	defer ps.workingTasks.Done()
+func (ps *MetaStateStore) AddMetaInfo(ctx context.Context, provider peer.ID, key cid.Cid, metaContext []byte) {
+	cctx, cncl := context.WithTimeout(ctx, time.Minute)
+	defer cncl()
+	select {
+	case ps.queuedTasks <- &metaInfo{
+		provider:    provider,
+		key:         key,
+		metaContext: metaContext,
+	}:
+	case <-cctx.Done():
+		log.Errorf("time out or be canceled")
+		return
+	}
+}
+
+func (ps *MetaStateStore) providerAddMeta(ctx context.Context, provider peer.ID, key cid.Cid, metaContext []byte) error {
+	ps.workingTasksWg.Add(1)
+	defer ps.workingTasksWg.Done()
 	err := ps.registry.UpdateProviderInfo(ctx, provider, key, 0)
 	if err != nil {
 		return err
@@ -108,7 +135,7 @@ func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID,
 		return err
 	}
 	if exist {
-		return metastore.KeyHasExisted
+		return storeError.KeyHasExisted
 	}
 	err = ps.root.Put(hkey, &cbortypes.MetaState{
 		ProviderID:     provider.String(),
@@ -122,42 +149,43 @@ func (ps *MetaStateStore) ProviderAddMeta(ctx context.Context, provider peer.ID,
 	return nil
 }
 
-func (ps *MetaStateStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *cbortypes.SnapShot, scid cid.Cid) error {
-	ps.workingTasks.Add(1)
-	defer ps.workingTasks.Done()
+func (ps *MetaStateStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *cbortypes.SnapShot, scid cid.Cid) (map[peer.ID][]cid.Cid, error) {
+	ps.workingTasksWg.Add(1)
+	defer ps.workingTasksWg.Done()
 	for p, clist := range update {
-		for _, c := range clist {
+		for idx, c := range clist {
 			key := hamt.StateKey{
 				Meta: c,
 			}
 			mstore := new(cbortypes.MetaState)
 			ok, err := ps.root.Get(key, mstore)
 			if !ok {
-				log.Errorf("nil meta state to update, provider:%s, cid:%s", p.String(), c.String())
+				// metaState is in queued, wait
 				continue
 			}
 			if err != nil {
-				return err
+				return nil, err
 			}
 			mstore.SnapShotCid = scid.String()
 			mstore.SnapShotHeight = ss.Height
 			err = ps.root.Put(key, mstore)
 			if err != nil {
-				return err
+				return nil, err
 			}
+			update[p] = append(update[p][:idx], update[p][idx+1:]...)
 		}
 		// update last update height for provider
 		err := ps.registry.UpdateProviderInfo(ctx, p, cid.Undef, ss.Height)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	return nil
+	return update, nil
 }
 
 func (ps *MetaStateStore) MetaStateRoot() (cid.Cid, error) {
-	ps.workingTasks.Wait()
+	ps.workingTasksWg.Wait()
 	root, err := ps.root.Root()
 	if err != nil {
 		return cid.Undef, err
@@ -189,8 +217,11 @@ func (ps *MetaStateStore) GetProviderInfo(ctx context.Context, p peer.ID) (*regi
 }
 
 func (ps *MetaStateStore) Close() error {
-	ps.workingTasks.Wait()
+	close(ps.queuedTasks)
+	// wait working tasks finished
+	<-ps.workingCh
 	ps.cncl()
+	ps.workingTasksWg.Wait()
 	c, err := ps.root.Root()
 	if err != nil {
 		log.Errorf("failed to flush hamt to store, err: %v", err)
@@ -202,4 +233,21 @@ func (ps *MetaStateStore) Close() error {
 		return err
 	}
 	return nil
+}
+
+func (ps *MetaStateStore) work() {
+	for {
+		select {
+		case task, ok := <-ps.queuedTasks:
+			if !ok {
+				log.Warnf("task channel has been closed, quit...")
+				close(ps.workingCh)
+				return
+			}
+			err := ps.providerAddMeta(ps.ctx, task.provider, task.key, task.metaContext)
+			if err != nil {
+				log.Errorf("failed to add metadata for cid: %s , err: %v", task.key.String(), err)
+			}
+		}
+	}
 }

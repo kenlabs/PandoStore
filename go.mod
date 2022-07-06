@@ -15,8 +15,9 @@ require (
 )
 
 require (
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/ipfs/go-block-format v0.0.3
-	github.com/ipfs/go-ds-leveldb v0.5.0
+	github.com/ipfs/go-ds-leveldb v0.5.1-0.20220627104637-a59ecb1f64df
 	github.com/ipfs/go-ipfs-ds-help v1.1.0
 	github.com/ipfs/go-ipfs-util v0.0.2
 	github.com/ipfs/go-log/v2 v2.0.5
@@ -43,7 +44,6 @@ require (
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
 	github.com/google/uuid v1.1.1 // indirect
 	github.com/gopherjs/gopherjs v0.0.0-20190812055157-5d271430af9f // indirect
-	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/go-ipld-format v0.3.0 // indirect
 	github.com/ipfs/go-log v1.0.4 // indirect

@@ -171,6 +171,7 @@ func TestMigrate(t *testing.T) {
 		StoreRoot:        tmpDir,
 		Dir:              "datastore",
 		SnapShotInterval: "1s",
+		CacheSize:        config.DefaultCacheSize,
 	})
 	if err != nil {
 		t.Fatal(err.Error())
