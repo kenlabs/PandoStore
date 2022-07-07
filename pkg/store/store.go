@@ -296,7 +296,7 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 		return err
 	}
 	// update provider state
-	_, err = ps.StateStore.ProvidersUpdateMeta(ctx, ps.waitForSnapshot, snapshot, c)
+	_, err = ps.StateStore.UpdateMetaState(ctx, ps.waitForSnapshot, snapshot, c)
 	if err != nil {
 		return err
 	}

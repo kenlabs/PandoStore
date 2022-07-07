@@ -159,7 +159,7 @@ func (ms *MetaStateStore) providerAddMeta(ctx context.Context, provider peer.ID,
 	return nil
 }
 
-func (ms *MetaStateStore) ProvidersUpdateMeta(ctx context.Context, update map[peer.ID][]cid.Cid, ss *cbortypes.SnapShot, scid cid.Cid) (map[peer.ID][]cid.Cid, error) {
+func (ms *MetaStateStore) UpdateMetaState(ctx context.Context, update map[peer.ID][]cid.Cid, ss *cbortypes.SnapShot, scid cid.Cid) (map[peer.ID][]cid.Cid, error) {
 	ms.workingTasksWg.Add(1)
 	defer ms.workingTasksWg.Done()
 	for p, clist := range update {
