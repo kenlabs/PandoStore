@@ -232,7 +232,10 @@ func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provid
 	_ = ps.cache.Add(key, val)
 
 	// update meta state and provider info
-	go ps.StateStore.AddMetaInfo(ctx, provider, key, metaContext)
+	err = ps.StateStore.AddMetaInfo(provider, key, metaContext)
+	if err != nil {
+		return err
+	}
 
 	if err := ps.updateSnapShotCache(provider, key); err != nil {
 		return err
@@ -490,14 +493,6 @@ func (ps *PandoStore) checkStatusAndClose() error {
 
 // this func should only be called when closed the PandoStore to persist the cache to metaStore
 func (ps *PandoStore) persistCache() {
-	//ch := make(chan struct{})
-	//go func() {
-	//	ps.cache.Purge()
-	//	close(ch)
-	//}()
-	//return ch
-
-	//ch := make(chan struct{})
 	keys := ps.cache.Keys()
 	removeCh := make(chan interface{})
 	wg := sync.WaitGroup{}

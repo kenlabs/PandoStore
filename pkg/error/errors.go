@@ -9,3 +9,4 @@ var (
 
 var KeyHasExisted = fmt.Errorf("key has existed")
 var StoreClosed = fmt.Errorf("PandoStore has been closed")
+var WrongDBState = fmt.Errorf("wrong db state")

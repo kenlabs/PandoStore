@@ -93,7 +93,7 @@ func TestRestartPandoStore(t *testing.T) {
 	_ = logging.SetLogLevel("PandoStore", "debug")
 	ctx := context.Background()
 	testdir := t.TempDir()
-	testStoreDir := path.Join(testdir, "teststore")
+	testStoreDir := path.Join(testdir, "teststore1")
 	cfg := &config.StoreConfig{
 		Type:             "levelds",
 		StoreRoot:        "",
@@ -150,17 +150,17 @@ func TestRestartPandoStore(t *testing.T) {
 
 }
 
-func Test100KWritePandoStore(t *testing.T) {
+func Test1KWriteWithClose(t *testing.T) {
 	_ = logging.SetLogLevel("PandoStore", "debug")
 	ctx := context.Background()
 	testdir := t.TempDir()
-	testStoreDir := path.Join(testdir, "teststore")
+	testStoreDir := path.Join(testdir, "teststore3")
 	cfg := &config.StoreConfig{
 		Type:             "levelds",
 		StoreRoot:        "",
 		Dir:              testStoreDir,
 		SnapShotInterval: "1s",
-		CacheSize:        config.DefaultCacheSize * 100,
+		CacheSize:        config.DefaultCacheSize,
 	}
 	store, err := NewStoreFromConfig(ctx, cfg)
 	if err != nil {
@@ -168,8 +168,8 @@ func Test100KWritePandoStore(t *testing.T) {
 	}
 
 	keys := make([]cid.Cid, 0)
-	for i := 0; i < 100; i++ {
-		data := make([]byte, rand.Int31n(1000))
+	for i := 0; i < 1000; i++ {
+		data := make([]byte, rand.Int31n(100))
 		rand.Read(data)
 		key, _ := cbortypes.LinkProto.Sum(data)
 		keys = append(keys, key)
@@ -201,4 +201,58 @@ func Test100KWritePandoStore(t *testing.T) {
 	assert.NoError(t, err)
 	err = store.Close()
 	assert.Equal(t, err, storeError.StoreClosed)
+}
+
+func Test100KWritePandoStore(t *testing.T) {
+	_ = logging.SetLogLevel("PandoStore", "debug")
+	_ = logging.SetLogLevel("state-store", "debug")
+	ctx := context.Background()
+	testdir := t.TempDir()
+	testStoreDir := path.Join(testdir, "teststore2")
+	cfg := &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        "",
+		Dir:              testStoreDir,
+		SnapShotInterval: "1s",
+		CacheSize:        config.DefaultCacheSize * 100,
+	}
+	store, err := NewStoreFromConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keys := make([]cid.Cid, 0)
+	for i := 0; i < 100000; i++ {
+		data := make([]byte, rand.Int31n(1000))
+		rand.Read(data)
+		key, _ := cbortypes.LinkProto.Sum(data)
+		keys = append(keys, key)
+		provid := peers[rand.Intn(len(peers))]
+		err = store.Store(ctx, key, data, provid, nil)
+		if err != nil {
+			if assert.Contains(t, err.Error(), "key has existed") {
+				continue
+			}
+			t.Fatal(err)
+		}
+
+	}
+
+	_, err = store.MetaInclusion(ctx, keys[len(keys)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < len(keys)/10; i++ {
+		_, err = store.Get(ctx, keys[rand.Intn(len(keys))])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	//assert.NoError(t, err)
+	//err = store.Close()
+	//assert.NoError(t, err)
+	//err = store.Close()
+	//assert.Equal(t, err, storeError.StoreClosed)
 }
