@@ -8,6 +8,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/kenlabs/PandoStore/pkg/config"
+	storeError "github.com/kenlabs/PandoStore/pkg/error"
 	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multicodec"
@@ -47,7 +48,10 @@ func TestRoundTripPandoStore(t *testing.T) {
 	ds := datastore.NewMapDatastore()
 	mds := dtsync.MutexWrap(ds)
 
-	cfg := &config.StoreConfig{SnapShotInterval: time.Second.String()}
+	cfg := &config.StoreConfig{
+		SnapShotInterval: time.Second.String(),
+		CacheSize:        config.DefaultCacheSize,
+	}
 	store, err := NewStoreFromDatastore(ctx, mds, cfg)
 	if err != nil {
 		t.Fatalf(err.Error())
@@ -89,12 +93,13 @@ func TestRestartPandoStore(t *testing.T) {
 	_ = logging.SetLogLevel("PandoStore", "debug")
 	ctx := context.Background()
 	testdir := t.TempDir()
-	testStoreDir := path.Join(testdir, "teststore")
+	testStoreDir := path.Join(testdir, "teststore1")
 	cfg := &config.StoreConfig{
 		Type:             "levelds",
 		StoreRoot:        "",
 		Dir:              testStoreDir,
 		SnapShotInterval: "1s",
+		CacheSize:        config.DefaultCacheSize,
 	}
 	db, err := NewStoreFromConfig(ctx, cfg)
 	if err != nil {
@@ -108,15 +113,14 @@ func TestRestartPandoStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(time.Millisecond * 1500)
+	time.Sleep(time.Millisecond * 2000)
 	err = db.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = db.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Equal(t, err, storeError.StoreClosed)
+
 	db, err = NewStoreFromConfig(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -141,34 +145,114 @@ func TestRestartPandoStore(t *testing.T) {
 	assert.Equal(t, info.Context, []byte(nil))
 	assert.Equal(t, info.Provider, peer1)
 	assert.Equal(t, info.SnapShotHeight, uint64(0))
+	err = db.Close()
+	assert.NoError(t, err)
 
 }
 
-func Test10KWritePandoStore(t *testing.T) {
+func Test1KWriteWithClose(t *testing.T) {
 	_ = logging.SetLogLevel("PandoStore", "debug")
-
 	ctx := context.Background()
-	ds := datastore.NewMapDatastore()
-	mds := dtsync.MutexWrap(ds)
-
-	cfg := &config.StoreConfig{SnapShotInterval: time.Second.String()}
-	store, err := NewStoreFromDatastore(ctx, mds, cfg)
+	testdir := t.TempDir()
+	testStoreDir := path.Join(testdir, "teststore3")
+	cfg := &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        "",
+		Dir:              testStoreDir,
+		SnapShotInterval: "1s",
+		CacheSize:        config.DefaultCacheSize,
+	}
+	store, err := NewStoreFromConfig(ctx, cfg)
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err)
 	}
 
-	for i := 0; i < 10000; i++ {
-		data := make([]byte, rand.Int31n(1000))
+	keys := make([]cid.Cid, 0)
+	for i := 0; i < 1000; i++ {
+		data := make([]byte, rand.Int31n(100))
 		rand.Read(data)
 		key, _ := cbortypes.LinkProto.Sum(data)
+		keys = append(keys, key)
 		provid := peers[rand.Intn(len(peers))]
 		err = store.Store(ctx, key, data, provid, nil)
 		if err != nil {
-			if assert.Contains(t, err.Error(), "key has existed or failed to check") {
+			if assert.Contains(t, err.Error(), "key has existed") {
 				continue
 			}
 			t.Fatal(err)
 		}
+
 	}
 
+	_, err = store.MetaInclusion(ctx, keys[len(keys)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < len(keys)/10; i++ {
+		_, err = store.Get(ctx, keys[rand.Intn(len(keys))])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assert.NoError(t, err)
+	err = store.Close()
+	assert.NoError(t, err)
+	err = store.Close()
+	assert.Equal(t, err, storeError.StoreClosed)
+}
+
+func Test100KWritePandoStore(t *testing.T) {
+	_ = logging.SetLogLevel("PandoStore", "debug")
+	_ = logging.SetLogLevel("state-store", "debug")
+	ctx := context.Background()
+	testdir := t.TempDir()
+	testStoreDir := path.Join(testdir, "teststore2")
+	cfg := &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        "",
+		Dir:              testStoreDir,
+		SnapShotInterval: "1s",
+		CacheSize:        config.DefaultCacheSize * 100,
+	}
+	store, err := NewStoreFromConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	keys := make([]cid.Cid, 0)
+	for i := 0; i < 100000; i++ {
+		data := make([]byte, rand.Int31n(1000))
+		rand.Read(data)
+		key, _ := cbortypes.LinkProto.Sum(data)
+		keys = append(keys, key)
+		provid := peers[rand.Intn(len(peers))]
+		err = store.Store(ctx, key, data, provid, nil)
+		if err != nil {
+			if assert.Contains(t, err.Error(), "key has existed") {
+				continue
+			}
+			t.Fatal(err)
+		}
+
+	}
+
+	_, err = store.MetaInclusion(ctx, keys[len(keys)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < len(keys)/10; i++ {
+		_, err = store.Get(ctx, keys[rand.Intn(len(keys))])
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	//assert.NoError(t, err)
+	//err = store.Close()
+	//assert.NoError(t, err)
+	//err = store.Close()
+	//assert.Equal(t, err, storeError.StoreClosed)
 }

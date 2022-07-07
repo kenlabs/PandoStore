@@ -2,13 +2,17 @@ package config
 
 import "github.com/mitchellh/go-homedir"
 
-const DefaultStoreDir = "PandoStore"
+const (
+	DefaultStoreDir  = "PandoStore"
+	DefaultCacheSize = 1024 * 1024 * 10
+)
 
 type StoreConfig struct {
 	Type             string
 	StoreRoot        string
 	Dir              string
 	SnapShotInterval string
+	CacheSize        int
 }
 
 func DefaultConfig() *StoreConfig {
@@ -19,5 +23,6 @@ func DefaultConfig() *StoreConfig {
 		StoreRoot:        homeRoot,
 		Dir:              DefaultStoreDir,
 		SnapShotInterval: "60m",
+		CacheSize:        DefaultCacheSize,
 	}
 }

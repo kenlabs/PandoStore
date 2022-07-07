@@ -31,7 +31,6 @@ func CheckVersion(storePath string) (string, error) {
 	}
 
 	verStr := string(verInfo)
-	fmt.Printf("%s", verStr)
 	switch verStr {
 	case Version1:
 		return Version1, nil
