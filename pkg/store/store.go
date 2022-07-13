@@ -57,6 +57,7 @@ type PandoStore struct {
 	// for provider update in snapshot
 	providerMutex    map[peer.ID]*sync.Mutex
 	stateMutex       sync.RWMutex
+	storeMutex       sync.Mutex
 	state            store.StoreState
 	snapshotDone     chan struct{}
 	taskInProcessing sync.WaitGroup
@@ -152,58 +153,15 @@ func NewStoreFromConfig(ctx context.Context, cfg *config.StoreConfig) (pkg.Pando
 	mutexDatastore := dtsync.MutexWrap(dataStore)
 
 	return NewStoreFromDatastore(ctx, mutexDatastore, cfg)
-	//bs := blockstore.NewBlockstore(mutexDatastore)
-	//cs := cbor.NewCborStore(bs)
-	//as := adt.WrapStore(childCtx, cs)
-	//metaStore, _ := metastore.New(mutexDatastore)
-	//stateStore, err := statestore.New(childCtx, mutexDatastore, as)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//snapStore, _ := snapshotstore.NewStore(childCtx, mutexDatastore, cs)
-	//
-	//s := &PandoStore{
-	//	ctx:             childCtx,
-	//	cncl:            cncl,
-	//	providerMutex:   make(map[peer.ID]*sync.Mutex),
-	//	waitForSnapshot: make(map[peer.ID][]cid.Cid),
-	//	BasicDS:         mutexDatastore,
-	//	metaStore:       metaStore,
-	//	StateStore:      stateStore,
-	//	snapShotStore:   snapStore,
-	//	cfg:             cfg,
-	//}
-	//err = s.run()
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	//return s, nil
 }
 
 func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provider peer.ID, metaContext []byte) error {
+	ps.storeMutex.Lock()
+	defer ps.storeMutex.Unlock()
 	if !key.Defined() {
 		return fmt.Errorf("invalid cid")
 	}
 
-	//ps.stateMutex.RLock()
-	//if ps.state != store.Working {
-	//	if ps.state == store.SnapShoting {
-	//		ps.stateMutex.RUnlock()
-	//		// wait snapshot finished
-	//		<-ps.snapshotDone
-	//	} else if ps.state == store.Closing {
-	//		ps.stateMutex.RUnlock()
-	//		return fmt.Errorf("pandostore is closing, failed to store: %s", key.String())
-	//	} else {
-	//		ps.stateMutex.RUnlock()
-	//		return fmt.Errorf("unknown work state: %v", ps.state)
-	//	}
-	//
-	//} else {
-	//	ps.stateMutex.RUnlock()
-	//}
-	//ps.taskInProcessing.Add(1)
 	err := ps.checkStatusAndAddTask()
 	if err != nil {
 		return err
@@ -225,10 +183,6 @@ func (ps *PandoStore) Store(ctx context.Context, key cid.Cid, val []byte, provid
 		return storeError.KeyHasExisted
 	}
 
-	// save meta data
-	//if err := ps.metaStore.Put(ctx, key, val); err != nil {
-	//	return err
-	//}
 	_ = ps.cache.Add(key, val)
 
 	// update meta state and provider info
