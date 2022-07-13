@@ -163,15 +163,14 @@ func (ms *MetaStateStore) UpdateMetaState(ctx context.Context, update map[peer.I
 	ms.workingTasksWg.Add(1)
 	defer ms.workingTasksWg.Done()
 	for p, clist := range update {
-		for idx, c := range clist {
+		for _, c := range clist {
 			key := hamt.StateKey{
 				Meta: c,
 			}
 			mstore := new(cbortypes.MetaState)
 			ok, err := ms.root.Get(key, mstore)
 			if !ok {
-				// metaState is in queued, wait
-				continue
+				return nil, fmt.Errorf("nil meta state")
 			}
 			if err != nil {
 				return nil, err
@@ -182,7 +181,6 @@ func (ms *MetaStateStore) UpdateMetaState(ctx context.Context, update map[peer.I
 			if err != nil {
 				return nil, err
 			}
-			update[p] = append(update[p][:idx], update[p][idx+1:]...)
 		}
 		// update last update height for provider
 		err := ms.registry.UpdateProviderInfo(ctx, p, cid.Undef, ss.Height)

@@ -228,6 +228,9 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		ps.state = store.Working
+	}()
 	// skip
 	if len(ps.waitForSnapshot) == 0 {
 		return nil
@@ -257,11 +260,11 @@ func (ps *PandoStore) generateSnapShot(ctx context.Context) error {
 
 	// clean cache
 	log.Infof("clean updated metaState in SnapShot")
-	//ps.waitForSnapshot = make(map[peer.ID][]cid.Cid)
+	ps.waitForSnapshot = make(map[peer.ID][]cid.Cid)
 	// release blocked tasks
 	ps.stateMutex.Lock()
 	close(ps.snapshotDone)
-	ps.state = store.Working
+
 	ps.stateMutex.Unlock()
 
 	return nil
