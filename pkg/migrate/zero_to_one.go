@@ -10,8 +10,8 @@ import (
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	dshelp "github.com/ipfs/go-ipfs-ds-help"
-	"github.com/kenlabs/PandoStore/pkg"
-	"github.com/kenlabs/PandoStore/pkg/metastore"
+	"github.com/kenlabs/pando-store/pkg"
+	"github.com/kenlabs/pando-store/pkg/metastore"
 	"os"
 	"path"
 )

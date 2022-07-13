@@ -3,7 +3,7 @@ package migrate
 import (
 	"fmt"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/kenlabs/PandoStore/pkg"
+	"github.com/kenlabs/pando-store/pkg"
 )
 
 var (

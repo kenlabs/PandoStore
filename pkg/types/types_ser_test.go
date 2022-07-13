@@ -3,7 +3,7 @@ package types
 import (
 	"encoding/json"
 	"github.com/ipfs/go-cid"
-	"github.com/kenlabs/PandoStore/pkg/types/cbortypes"
+	"github.com/kenlabs/pando-store/pkg/types/cbortypes"
 	"testing"
 )
 
