@@ -143,7 +143,7 @@ func TestRestartPandoStore(t *testing.T) {
 	assert.Equal(t, info.InSnapShot, true)
 	assert.Equal(t, info.SnapShotID, c)
 	assert.Equal(t, info.Context, []byte(nil))
-	assert.Equal(t, info.Provider, peer1)
+	assert.Equal(t, info.Provider, peer1.String())
 	assert.Equal(t, info.SnapShotHeight, uint64(0))
 	err = db.Close()
 	assert.NoError(t, err)
@@ -213,7 +213,7 @@ func Test100KWritePandoStore(t *testing.T) {
 		Type:             "levelds",
 		StoreRoot:        "",
 		Dir:              testStoreDir,
-		SnapShotInterval: "1s",
+		SnapShotInterval: "100s",
 		CacheSize:        config.DefaultCacheSize * 100,
 	}
 	store, err := NewStoreFromConfig(ctx, cfg)
@@ -297,7 +297,7 @@ func TestMetaStateUpdate(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, inclusion.InPando, true)
 		assert.Equal(t, inclusion.ID, keys[i])
-		assert.Equal(t, inclusion.Provider, provid)
+		assert.Equal(t, inclusion.Provider, provid.String())
 	}
 
 }
