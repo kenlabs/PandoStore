@@ -250,9 +250,54 @@ func Test100KWritePandoStore(t *testing.T) {
 		}
 	}
 
-	//assert.NoError(t, err)
-	//err = store.Close()
-	//assert.NoError(t, err)
-	//err = store.Close()
-	//assert.Equal(t, err, storeError.StoreClosed)
+}
+
+func TestMetaStateUpdate(t *testing.T) {
+	_ = logging.SetLogLevel("PandoStore", "debug")
+	ctx := context.Background()
+	testdir := t.TempDir()
+	testStoreDir := path.Join(testdir, "teststore4")
+	cfg := &config.StoreConfig{
+		Type:             "levelds",
+		StoreRoot:        "",
+		Dir:              testStoreDir,
+		SnapShotInterval: "10s",
+		CacheSize:        config.DefaultCacheSize,
+	}
+	store, err := NewStoreFromConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]cid.Cid, 0)
+	provid := peers[rand.Intn(len(peers))]
+	for i := 0; i < 100; i++ {
+		data := make([]byte, rand.Int31n(100))
+		rand.Read(data)
+		key, _ := cbortypes.LinkProto.Sum(data)
+		keys = append(keys, key)
+		err = store.Store(ctx, key, data, provid, nil)
+		if err != nil {
+			if assert.Contains(t, err.Error(), "key has existed") {
+				continue
+			}
+			t.Fatal(err)
+		}
+	}
+	// working jobs should be finished before closing store
+	err = store.Close()
+	assert.NoError(t, err)
+
+	store, err = NewStoreFromConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < len(keys); i++ {
+		inclusion, err := store.MetaInclusion(ctx, keys[i])
+		assert.NoError(t, err)
+		assert.Equal(t, inclusion.InPando, true)
+		assert.Equal(t, inclusion.ID, keys[i])
+		assert.Equal(t, inclusion.Provider, provid)
+	}
+
 }
