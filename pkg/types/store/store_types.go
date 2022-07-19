@@ -6,12 +6,12 @@ import (
 )
 
 type MetaInclusion struct {
-	ID             cid.Cid
-	Provider       peer.ID
-	InPando        bool
-	InSnapShot     bool
-	SnapShotID     cid.Cid
-	SnapShotHeight uint64
-	Context        []byte
-	TranscationID  int
+	ID             cid.Cid `json:"ID"`
+	Provider       peer.ID `json:"Provider"`
+	InPando        bool    `json:"InPando"`
+	InSnapShot     bool    `json:"InSnapShot"`
+	SnapShotID     cid.Cid `json:"SnapShotID"`
+	SnapShotHeight uint64  `json:"SnapShotHeight"`
+	Context        []byte  `json:"Context"`
+	TranscationID  int     `json:"TranscationID"`
 }
