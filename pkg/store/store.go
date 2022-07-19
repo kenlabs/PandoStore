@@ -296,7 +296,7 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 		if err != nil {
 			return nil, err
 		}
-		res.Provider = p
+		res.Provider = p.String()
 		if info.SnapShotCid != "" {
 			scid, err := cid.Decode(info.SnapShotCid)
 			if err != nil {
