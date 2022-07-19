@@ -274,11 +274,13 @@ func (ps *PandoStore) MetaInclusion(ctx context.Context, c cid.Cid) (*store.Meta
 	res := &store.MetaInclusion{}
 	res.ID = c
 
+	inCache := ps.cache.Contains(c)
+
 	ok, err := ps.metaStore.CheckExisted(ctx, c)
 	if err != nil {
 		return nil, err
 	}
-	if !ok {
+	if !ok && !inCache {
 		res.InPando = false
 		return res, nil
 	}
