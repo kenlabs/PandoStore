@@ -193,6 +193,9 @@ func TestMigrate(t *testing.T) {
 	t.Log(string(data1))
 	t.Log(string(data2))
 
+	v, err := pkg.CheckVersion(oldStoreDir)
+	assert.NoError(t, err)
+	assert.Equal(t, v, pkg.Version1)
 }
 
 func TestBlockMigrate(t *testing.T) {

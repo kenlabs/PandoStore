@@ -173,7 +173,7 @@ func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbo
 	if err != nil {
 		return nil, cid.Undef, err
 	}
-	if len(*slist) == 0 || h+1 > uint64(len(*slist)) {
+	if slist == nil || len(*slist) == 0 || h+1 > uint64(len(*slist)) {
 		log.Errorf("invalid height: %d", h)
 		return nil, cid.Undef, storeError.InvalidParameters
 	}
