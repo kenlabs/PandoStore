@@ -81,7 +81,12 @@ func NewStoreFromDatastore(ctx context.Context, mds *dtsync.MutexDatastore, cfg 
 		cncl()
 		return nil, err
 	}
-	snapStore, _ := snapshotstore.NewStore(childCtx, mds, cs)
+	snapStore, err := snapshotstore.NewStore(childCtx, mds, cs)
+	if err != nil {
+		cncl()
+		return nil, err
+	}
+
 	cache, err := lru.NewWithEvict(cfg.CacheSize, getEvictFunction(childCtx, metaStore))
 	if err != nil {
 		cncl()
