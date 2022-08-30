@@ -14,3 +14,11 @@ type MetaInclusion struct {
 	Context        []byte  `json:"Context"`
 	TranscationID  int     `json:"TranscationID"`
 }
+
+type SnapShotList struct {
+	Length int
+	List   []struct {
+		CreatedTime uint64
+		SnapShotCid cid.Cid
+	}
+}
