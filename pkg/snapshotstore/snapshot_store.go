@@ -12,6 +12,7 @@ import (
 	storeError "github.com/kenlabs/pando-store/pkg/error"
 	"github.com/kenlabs/pando-store/pkg/hamt"
 	"github.com/kenlabs/pando-store/pkg/types/cbortypes"
+	"github.com/kenlabs/pando-store/pkg/types/store"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"sync"
 	"time"
@@ -19,7 +20,6 @@ import (
 
 const (
 	SnapShotListKey = "/SnapShotList"
-	rootKey         = "/SnapShotStore"
 )
 
 var log = logging.Logger("SnapShotStore")
@@ -34,11 +34,15 @@ type SnapShotStore struct {
 }
 
 func NewStore(ctx context.Context, mds *dtsync.MutexDatastore, cs cbor.IpldStore) (*SnapShotStore, error) {
-	store := &SnapShotStore{
+	sstore := &SnapShotStore{
 		mds: mds,
 		cs:  cs,
 	}
-	return store, nil
+	err := sstore.init(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return sstore, nil
 }
 
 func (s *SnapShotStore) init(ctx context.Context) error {
@@ -46,15 +50,15 @@ func (s *SnapShotStore) init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if slist != nil {
+	if slist != nil && slist.Length != 0 {
 		ss := new(cbortypes.SnapShot)
-		newestCid := (*slist)[len(*slist)-1]
+		newestCid := slist.List[slist.Length-1].SnapShotCid
 		err = s.cs.Get(ctx, newestCid, ss)
 		if err != nil {
 			return fmt.Errorf("failed to load the newest snapshot: %s", newestCid.String())
 		}
 		s.curSnapShot = newestCid
-		s.curHeight = uint64(len(*slist))
+		s.curHeight = uint64(slist.Length)
 	} else {
 		s.curSnapShot = cid.Undef
 		s.curHeight = 0
@@ -63,12 +67,43 @@ func (s *SnapShotStore) init(ctx context.Context) error {
 	return nil
 }
 
-func (s *SnapShotStore) GetSnapShotList(ctx context.Context) (*[]cid.Cid, error) {
+func (s *SnapShotStore) GetSnapShotList(ctx context.Context) (*store.SnapShotList, error) {
 	snapShotList, err := s.mds.Get(ctx, datastore.NewKey(SnapShotListKey))
 	if err == nil && snapShotList != nil {
-		res := []cid.Cid{}
+		res := store.SnapShotList{}
 		err := json.Unmarshal(snapShotList, &res)
 		if err != nil {
+			oldRes := []cid.Cid{}
+			err = json.Unmarshal(snapShotList, &oldRes)
+			// try migrating the old snapshot cidlist to new snapshotList
+			if err == nil {
+				newSsList := &store.SnapShotList{}
+				newSsList.Length = len(oldRes)
+				// migrate
+				for idx, c := range oldRes {
+					ss, err := s.GetSnapShotByCid(ctx, c)
+					if err != nil {
+						return nil, fmt.Errorf("failed to migrate the old snapshot list to new struct, err: %s", err.Error())
+					}
+					if ss.Height != uint64(idx) {
+						return nil, fmt.Errorf("mismatched height found in snapshot while migrating the old snapshot list, found: %d, expected: %d", ss.Height, idx)
+					}
+					newSsList.List = append(newSsList.List, struct {
+						CreatedTime uint64
+						SnapShotCid cid.Cid
+					}{CreatedTime: ss.CreateTime, SnapShotCid: c})
+				}
+				// save migrated result
+				newSnapShotListBytes, err := json.Marshal(newSsList)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal the migrated snapshot list. %s", err.Error())
+				}
+				err = s.mds.Put(ctx, datastore.NewKey(SnapShotListKey), newSnapShotListBytes)
+				if err != nil {
+					return nil, fmt.Errorf("failed to save the new snapshotList in mds, err: %s", err)
+				}
+				return newSsList, nil
+			}
 			return nil, fmt.Errorf("failed to load the snapshot cid list from datastore")
 		}
 		return &res, nil
@@ -116,34 +151,44 @@ func (s *SnapShotStore) GenerateSnapShot(ctx context.Context, update map[peer.ID
 	}
 	s.curSnapShot = c
 	s.curHeight++
-	err = s.updateSnapShotCidList(ctx, c)
+	err = s.updateSnapShotCidList(ctx, c, newSnapShot.CreateTime)
 	if err != nil {
 		return cid.Undef, nil, fmt.Errorf("error happened while updating the cidlist of snapshot.%v", err)
 	}
 	return c, newSnapShot, nil
 }
 
-func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.Cid) error {
-	snapShotList, err := s.mds.Get(ctx, datastore.NewKey(SnapShotListKey))
-	if err == nil && snapShotList != nil {
-		var ssCidList []cid.Cid
-		err := json.Unmarshal(snapShotList, &ssCidList)
+func (s *SnapShotStore) updateSnapShotCidList(ctx context.Context, newSsCid cid.Cid, createdTimestamp uint64) error {
+	snapShotListBytes, err := s.mds.Get(ctx, datastore.NewKey(SnapShotListKey))
+	if err == nil && snapShotListBytes != nil {
+		var snapshotList store.SnapShotList
+		err := json.Unmarshal(snapShotListBytes, &snapshotList)
 		if err != nil {
 			return fmt.Errorf("failed to load the snapshot cid list from datastore")
 		}
 
-		ssCidList = append(ssCidList, newSsCid)
-		ssCidListBytes, err := json.Marshal(ssCidList)
+		snapshotList.List = append(snapshotList.List, struct {
+			CreatedTime uint64
+			SnapShotCid cid.Cid
+		}{CreatedTime: createdTimestamp, SnapShotCid: newSsCid})
+		snapshotList.Length++
+
+		newSnapShotListBytes, err := json.Marshal(snapshotList)
 		if err != nil {
 			return fmt.Errorf("failed to marshal the cidlist of snapshot. %s", err.Error())
 		}
-		err = s.mds.Put(ctx, datastore.NewKey(SnapShotListKey), ssCidListBytes)
+		err = s.mds.Put(ctx, datastore.NewKey(SnapShotListKey), newSnapShotListBytes)
 		if err != nil {
 			return fmt.Errorf("failed to save the new snap shot cid list in mds")
 		}
 	} else {
-		ssCidList := []cid.Cid{newSsCid}
-		ssCidListBytes, err := json.Marshal(ssCidList)
+		snapshotList := store.SnapShotList{}
+		snapshotList.List = append(snapshotList.List, struct {
+			CreatedTime uint64
+			SnapShotCid cid.Cid
+		}{CreatedTime: createdTimestamp, SnapShotCid: newSsCid})
+		snapshotList.Length = 1
+		ssCidListBytes, err := json.Marshal(snapshotList)
 		if err != nil {
 			return fmt.Errorf("failed to marshal the cidlist of snapshot. %s", err.Error())
 		}
@@ -173,11 +218,11 @@ func (s *SnapShotStore) GetSnapShotByHeight(ctx context.Context, h uint64) (*cbo
 	if err != nil {
 		return nil, cid.Undef, err
 	}
-	if slist == nil || len(*slist) == 0 || h+1 > uint64(len(*slist)) {
+	if slist == nil || slist.Length == 0 || h+1 > uint64(slist.Length) {
 		log.Errorf("invalid height: %d", h)
 		return nil, cid.Undef, storeError.InvalidParameters
 	}
-	c := (*slist)[h]
+	c := slist.List[h].SnapShotCid
 	snapshot, err := s.GetSnapShotByCid(ctx, c)
 	if err != nil {
 		return nil, cid.Undef, err
